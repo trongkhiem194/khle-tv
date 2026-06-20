@@ -1,6 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:cached_network_image/cached_network_image.dart';
+import '../services/api_service.dart';
 
 /// Virtual Keyboard Dialog cho Android TV (dùng remote D-pad)
+/// Hỗ trợ tìm kiếm giọng nói (Speech-to-Text) và gợi ý kết quả thời gian thực
 class VirtualKeyboardDialog extends StatefulWidget {
   final String initialText;
   const VirtualKeyboardDialog({super.key, this.initialText = ''});
@@ -19,22 +24,143 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     '4', '5', '6', '7', '8', '9',
   ];
 
+  // Giọng nói
+  late stt.SpeechToText _speech;
+  bool _speechEnabled = false;
+  bool _listening = false;
+
+  // Gợi ý tìm kiếm
+  Timer? _debounce;
+  List<dynamic> _suggestions = [];
+  bool _searchingSuggestions = false;
+
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialText);
+    _speech = stt.SpeechToText();
+    _initSpeech();
+    if (widget.initialText.isNotEmpty) {
+      _onTextChanged(widget.initialText);
+    }
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  Future<void> _initSpeech() async {
+    try {
+      final available = await _speech.initialize(
+        onStatus: (val) {
+          debugPrint('[Speech] onStatus: $val');
+          if (val == 'done' || val == 'notListening') {
+            setState(() => _listening = false);
+          }
+        },
+        onError: (val) {
+          debugPrint('[Speech] onError: $val');
+          setState(() => _listening = false);
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _speechEnabled = available;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Speech] Init error: $e');
+    }
+  }
+
+  void _startListening() async {
+    if (!_speechEnabled) {
+      await _initSpeech();
+    }
+    if (_speechEnabled) {
+      setState(() => _listening = true);
+      await _speech.listen(
+        onResult: (val) {
+          if (val.recognizedWords.isNotEmpty) {
+            setState(() {
+              _ctrl.text = val.recognizedWords;
+            });
+            _onTextChanged(val.recognizedWords);
+          }
+        },
+        listenOptions: stt.SpeechListenOptions(
+          localeId: 'vi_VN',
+          listenFor: const Duration(seconds: 15),
+          pauseFor: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không tìm thấy dịch vụ giọng nói hoặc quyền bị từ chối')),
+        );
+      }
+    }
+  }
+
+  void _stopListening() async {
+    await _speech.stop();
+    setState(() => _listening = false);
+  }
+
+  void _onTextChanged(String text) {
+    _debounce?.cancel();
+    if (text.trim().isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _searchingSuggestions = false;
+      });
+      return;
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+      setState(() => _searchingSuggestions = true);
+      try {
+        final query = text.trim();
+        final results = await Future.wait([
+          ApiService.searchMovies(query),
+          ApiService.searchTV(query),
+        ]);
+
+        final movies = (results[0]['results'] as List?) ?? [];
+        final tv = (results[1]['results'] as List?) ?? [];
+
+        final combined = [
+          ...movies.take(3).map((m) { m['_type'] = 'movie'; return m; }),
+          ...tv.take(3).map((t) { t['_type'] = 'tv'; return t; }),
+        ];
+
+        final suggestionsList = combined.take(4).toList();
+
+        if (mounted && _ctrl.text.trim() == query) {
+          setState(() {
+            _suggestions = suggestionsList;
+            _searchingSuggestions = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('[Suggestions] Error: $e');
+        if (mounted) {
+          setState(() => _searchingSuggestions = false);
+        }
+      }
+    });
   }
 
   void _append(String char) {
     setState(() {
       _ctrl.text = _ctrl.text + char;
     });
+    _onTextChanged(_ctrl.text);
   }
 
   void _backspace() {
@@ -42,6 +168,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
       setState(() {
         _ctrl.text = _ctrl.text.substring(0, _ctrl.text.length - 1);
       });
+      _onTextChanged(_ctrl.text);
     }
   }
 
@@ -49,6 +176,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     setState(() {
       _ctrl.text = '';
     });
+    _onTextChanged(_ctrl.text);
   }
 
   @override
@@ -57,22 +185,28 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
       backgroundColor: const Color(0xFF15151F),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 700,
-        height: 380,
+        width: 850,
+        height: 480,
         padding: const EdgeInsets.all(24),
         child: Row(
           children: [
-            // Left Side: Text display + main action buttons
+            // Left Side: Text display + Voice Button + Suggestions
             Expanded(
-              flex: 4,
+              flex: 5,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '🔍 Tìm kiếm phim',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                  Row(
+                    children: [
+                      const Text(
+                        '🔍 Tìm kiếm phim',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                      ),
+                      const Spacer(),
+                      _voiceSearchButton(),
+                    ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _ctrl,
                     readOnly: true, // Không hiện bàn phím hệ thống
@@ -87,23 +221,97 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
                   ),
-                  const Spacer(),
-                  // Action buttons: Dấu cách, Xóa, Xóa hết
+                  const SizedBox(height: 16),
+                  const Text('Gợi ý phim:', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: _searchingSuggestions
+                      ? const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)))
+                      : (_suggestions.isEmpty
+                          ? Center(
+                              child: Text(
+                                _ctrl.text.isEmpty ? 'Nhập tên phim để xem gợi ý...' : 'Không tìm thấy gợi ý nào',
+                                style: const TextStyle(color: Colors.white38, fontSize: 13),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _suggestions.length,
+                              itemBuilder: (_, idx) => _suggestionItem(_suggestions[idx]),
+                            )),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 24),
+            const VerticalDivider(color: Colors.white12, width: 1),
+            const SizedBox(width: 24),
+            // Right Side: Grid of A-Z, 0-9 + Actions
+            Expanded(
+              flex: 4,
+              child: Column(
+                children: [
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 6,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 1.1,
+                    ),
+                    itemCount: _keys.length,
+                    itemBuilder: (ctx, idx) {
+                      final keyStr = _keys[idx];
+                      return Focus(
+                        autofocus: idx == 0, // Tự động bắt nét vào phím chữ A đầu tiên
+                        child: Builder(
+                          builder: (context) {
+                            final hasFocus = Focus.of(context).hasFocus;
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                              child: InkWell(
+                                onTap: () => _append(keyStr),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    keyStr,
+                                    style: TextStyle(
+                                      color: hasFocus ? Colors.black : Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
+                        flex: 2,
                         child: _actionButton('Dấu cách', Icons.space_bar, () => _append(' ')),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
+                        flex: 1,
                         child: _actionButton('Xóa', Icons.backspace, _backspace),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
+                      const SizedBox(width: 8),
                       Expanded(
+                        flex: 1,
                         child: _actionButton('Xóa hết', Icons.clear_all, _clear),
                       ),
                     ],
@@ -113,65 +321,52 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Hủy', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14)),
+                      Focus(
+                        child: Builder(
+                          builder: (context) {
+                            final hasFocus = Focus.of(context).hasFocus;
+                            return TextButton(
+                              style: TextButton.styleFrom(
+                                backgroundColor: hasFocus ? Colors.white : Colors.transparent,
+                                foregroundColor: hasFocus ? Colors.black : Colors.white70,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.transparent),
+                                ),
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              ),
+                            );
+                          }
+                        ),
                       ),
                       const SizedBox(width: 12),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context, _ctrl.text),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFE50914),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      Focus(
+                        child: Builder(
+                          builder: (context) {
+                            final hasFocus = Focus.of(context).hasFocus;
+                            return ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: hasFocus ? Colors.white : const Color(0xFFE50914),
+                                foregroundColor: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.transparent),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              ),
+                              onPressed: () => Navigator.pop(context, _ctrl.text),
+                              child: const Text('Tìm', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                            );
+                          }
                         ),
-                        child: const Text('Tìm', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 14)),
                       ),
                     ],
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(width: 24),
-            const VerticalDivider(color: Colors.white12, width: 1),
-            const SizedBox(width: 24),
-            // Right Side: Grid of A-Z, 0-9
-            Expanded(
-              flex: 5,
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 6,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 1.1,
-                ),
-                itemCount: _keys.length,
-                itemBuilder: (ctx, idx) {
-                  final keyStr = _keys[idx];
-                  return Material(
-                    color: const Color(0xFF1C1C30),
-                    borderRadius: BorderRadius.circular(8),
-                    child: InkWell(
-                      onTap: () => _append(keyStr),
-                      autofocus: idx == 0, // Tự động bắt nét vào phím chữ A đầu tiên
-                      focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        alignment: Alignment.center,
-                        child: Text(
-                          keyStr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
           ],
@@ -180,24 +375,182 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     );
   }
 
+  Widget _voiceSearchButton() {
+    return Focus(
+      child: Builder(
+        builder: (context) {
+          final hasFocus = Focus.of(context).hasFocus;
+          return Container(
+            decoration: BoxDecoration(
+              color: _listening
+                  ? const Color(0xFFE50914)
+                  : (hasFocus ? Colors.white : const Color(0xFF1C1C30)),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: InkWell(
+              onTap: _listening ? _stopListening : _startListening,
+              borderRadius: BorderRadius.circular(18),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _listening ? Icons.mic : Icons.mic_none,
+                      color: _listening
+                          ? Colors.white
+                          : (hasFocus ? const Color(0xFFE50914) : Colors.white70),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _listening ? 'Đang nghe...' : 'Giọng nói',
+                      style: TextStyle(
+                        color: _listening
+                            ? Colors.white
+                            : (hasFocus ? Colors.black : Colors.white70),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+      ),
+    );
+  }
+
   Widget _actionButton(String label, IconData icon, VoidCallback onTap) {
-    return Material(
-      color: const Color(0xFF1C1C30),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: Colors.white70),
-              const SizedBox(width: 6),
-              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-            ],
-          ),
+    return Focus(
+      child: Builder(
+        builder: (context) {
+          final hasFocus = Focus.of(context).hasFocus;
+          return Container(
+            decoration: BoxDecoration(
+              color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 16, color: hasFocus ? Colors.black : Colors.white70),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: hasFocus ? Colors.black : Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _suggestionItem(Map<String, dynamic> movie) {
+    final title = movie['title'] ?? movie['name'] ?? 'Không có tên';
+    final releaseDate = movie['release_date'] ?? movie['first_air_date'] ?? '';
+    final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+    final posterPath = movie['poster_path']?.toString() ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Focus(
+        child: Builder(
+          builder: (context) {
+            final hasFocus = Focus.of(context).hasFocus;
+            return Container(
+              decoration: BoxDecoration(
+                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: InkWell(
+                onTap: () {
+                  Navigator.pop(context, movie); // Trả về Map thông tin phim trực tiếp
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
+                    children: [
+                      if (posterPath.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: CachedNetworkImage(
+                            imageUrl: ApiService.posterUrl(posterPath, size: 'w92'),
+                            width: 32,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(width: 32, height: 48, color: Colors.white12),
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 32,
+                          height: 48,
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)),
+                          child: const Icon(Icons.movie, size: 16, color: Colors.white24),
+                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: TextStyle(
+                                color: hasFocus ? Colors.black : Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (year.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                year,
+                                style: TextStyle(
+                                  color: hasFocus ? Colors.black54 : Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
         ),
       ),
     );

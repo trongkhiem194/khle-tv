@@ -245,109 +245,173 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                           final size = s['size']?.toString() ?? '';
                           Color uploaderColor = uploader.toLowerCase() == 'vietmediaf' ? const Color(0xFFE50914) : (uploader.toLowerCase() == 'thuvienhd' ? const Color(0xFF3B82F6) : const Color(0xFF10B981));
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1C1C30),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: isSelected ? const Color(0xFFE50914) : Colors.white12, width: isSelected ? 1.5 : 1.0),
-                            ),
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  onTap: () => _selectSource(index),
-                                  leading: const Icon(Icons.folder, color: Color(0xFFFFD700), size: 28),
-                                  title: Text(sheetName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
-                                  subtitle: Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: uploaderColor.withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: uploaderColor.withValues(alpha: 0.3)),
-                                          ),
-                                          child: Text(
-                                            uploader.toUpperCase(),
-                                            style: TextStyle(color: uploaderColor, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5),
-                                          ),
-                                        ),
-                                        if (size.isNotEmpty) ...[
-                                          const SizedBox(width: 8),
-                                          Text(size, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
-                                        ],
-                                      ],
+                          return Focus(
+                            child: Builder(
+                              builder: (context) {
+                                final hasFocus = Focus.of(context).hasFocus;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  decoration: BoxDecoration(
+                                    color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: hasFocus ? const Color(0xFFE50914) : (isSelected ? const Color(0xFFE50914) : Colors.white12),
+                                      width: (hasFocus || isSelected) ? 2.0 : 1.0,
                                     ),
                                   ),
-                                  trailing: Icon(isSelected ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.white38),
-                                ),
-                                if (isSelected) ...[
-                                  const Divider(color: Colors.white10, height: 1),
-                                  if (_filesLoading)
-                                    const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: Color(0xFFE50914)))
-                                  else if (_folderFiles.isEmpty)
-                                    const Padding(padding: EdgeInsets.all(24), child: Text('Không tìm thấy file video', style: TextStyle(color: Colors.white38, fontSize: 13)))
-                                  else
-                                    ListView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      itemCount: _folderFiles.length,
-                                      itemBuilder: (_, fIdx) {
-                                        final f = _folderFiles[fIdx];
-                                        return Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            onTap: () => _playFile(f),
-                                            focusColor: const Color(0xFFE50914).withValues(alpha: 0.25),
-                                            hoverColor: Colors.white.withValues(alpha: 0.05),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                              decoration: const BoxDecoration(
-                                                border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.play_circle_fill, color: Color(0xFFE50914), size: 28),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                  child: Column(
+                                    children: [
+                                      InkWell(
+                                        onTap: () => _selectSource(index),
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.folder, color: hasFocus ? const Color(0xFFE50914) : const Color(0xFFFFD700), size: 28),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      sheetName,
+                                                      style: TextStyle(
+                                                        color: hasFocus ? Colors.black : Colors.white,
+                                                        fontWeight: FontWeight.w700,
+                                                        fontSize: 14,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Row(
                                                       children: [
-                                                        Text(f['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                                        if (f['sizeFormatted'] != null) ...[
-                                                          const SizedBox(height: 2),
-                                                          Text(f['sizeFormatted'], style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: uploaderColor.withValues(alpha: hasFocus ? 0.1 : 0.15),
+                                                            borderRadius: BorderRadius.circular(4),
+                                                            border: Border.all(color: uploaderColor.withValues(alpha: hasFocus ? 0.4 : 0.3)),
+                                                          ),
+                                                          child: Text(
+                                                            uploader.toUpperCase(),
+                                                            style: TextStyle(color: uploaderColor, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                                                          ),
+                                                        ),
+                                                        if (size.isNotEmpty) ...[
+                                                          const SizedBox(width: 8),
+                                                          Text(
+                                                            size,
+                                                            style: TextStyle(
+                                                              color: hasFocus ? Colors.black54 : Colors.white.withValues(alpha: 0.4),
+                                                              fontSize: 11,
+                                                            ),
+                                                          ),
                                                         ],
                                                       ],
                                                     ),
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFE50914),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                    ),
-                                                    child: const Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Icon(Icons.play_arrow, size: 14, color: Colors.white),
-                                                        SizedBox(width: 2),
-                                                        Text('Xem', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 12)),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
+                                                  ],
+                                                ),
                                               ),
-                                            ),
+                                              Icon(
+                                                isSelected ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                                color: hasFocus ? Colors.black54 : Colors.white38,
+                                              ),
+                                            ],
                                           ),
-                                        );
-                                      },
-                                    ),
-                                ],
-                              ],
+                                        ),
+                                      ),
+                                      if (isSelected) ...[
+                                        const Divider(color: Colors.white10, height: 1),
+                                        if (_filesLoading)
+                                          const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: Color(0xFFE50914)))
+                                        else if (_folderFiles.isEmpty)
+                                          const Padding(padding: EdgeInsets.all(24), child: Text('Không tìm thấy file video', style: TextStyle(color: Colors.white38, fontSize: 13)))
+                                        else
+                                          ListView.builder(
+                                            shrinkWrap: true,
+                                            physics: const NeverScrollableScrollPhysics(),
+                                            itemCount: _folderFiles.length,
+                                            itemBuilder: (_, fIdx) {
+                                              final f = _folderFiles[fIdx];
+                                              return Focus(
+                                                child: Builder(
+                                                  builder: (context) {
+                                                    final fileHasFocus = Focus.of(context).hasFocus;
+                                                    return Container(
+                                                      decoration: BoxDecoration(
+                                                        color: fileHasFocus ? Colors.white : Colors.transparent,
+                                                        border: const Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+                                                      ),
+                                                      child: InkWell(
+                                                        onTap: () => _playFile(f),
+                                                        child: Padding(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                          child: Row(
+                                                            children: [
+                                                              const Icon(Icons.play_circle_fill, color: Color(0xFFE50914), size: 28),
+                                                              const SizedBox(width: 12),
+                                                              Expanded(
+                                                                child: Column(
+                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                  children: [
+                                                                    Text(
+                                                                      f['name'],
+                                                                      style: TextStyle(
+                                                                        fontSize: 13,
+                                                                        fontWeight: FontWeight.w600,
+                                                                        color: fileHasFocus ? Colors.black : Colors.white,
+                                                                      ),
+                                                                      maxLines: 2,
+                                                                      overflow: TextOverflow.ellipsis,
+                                                                    ),
+                                                                    if (f['sizeFormatted'] != null) ...[
+                                                                      const SizedBox(height: 2),
+                                                                      Text(
+                                                                        f['sizeFormatted'],
+                                                                        style: TextStyle(
+                                                                          fontSize: 11,
+                                                                          color: fileHasFocus ? Colors.black54 : Colors.white.withValues(alpha: 0.4),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 12),
+                                                              Container(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                                decoration: BoxDecoration(
+                                                                  color: const Color(0xFFE50914),
+                                                                  borderRadius: BorderRadius.circular(6),
+                                                                  border: Border.all(
+                                                                    color: fileHasFocus ? Colors.black : Colors.transparent,
+                                                                    width: 1,
+                                                                  ),
+                                                                ),
+                                                                child: const Row(
+                                                                  mainAxisSize: MainAxisSize.min,
+                                                                  children: [
+                                                                    Icon(Icons.play_arrow, size: 14, color: Colors.white),
+                                                                    SizedBox(width: 2),
+                                                                    Text('Xem', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 12)),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              }
                             ),
                           );
                         },

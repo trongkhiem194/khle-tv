@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   media_kit_video
+  speech_to_text_windows
   volume_controller
 )
 

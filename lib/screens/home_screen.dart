@@ -188,11 +188,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showSearch() async {
-    final result = await showDialog<String>(
+    final result = await showDialog<dynamic>(
       context: context,
       builder: (context) => const VirtualKeyboardDialog(initialText: ''),
     );
-    if (result != null && result.trim().isNotEmpty) _search(result.trim());
+    if (result == null) return;
+    if (result is Map<String, dynamic>) {
+      final type = result['_type'] ?? result['media_type'] ?? 'movie';
+      _openMovie(result, type);
+    } else if (result is String && result.trim().isNotEmpty) {
+      _search(result.trim());
+    }
   }
 
   void _openMovie(Map<String, dynamic> movie, String type) {
