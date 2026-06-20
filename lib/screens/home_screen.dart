@@ -106,18 +106,81 @@ class _HomeScreenState extends State<HomeScreen> {
     if (query.length < 2) return;
     setState(() { _pageLoading = true; _currentPage = 'search'; _pageTitle = 'Kết quả: "$query"'; });
     try {
-      final results = await Future.wait([ApiService.searchMovies(query), ApiService.searchTV(query)]);
-      final movies = (results[0]['results'] as List?) ?? [];
-      final tvShows = (results[1]['results'] as List?) ?? [];
-      final all = [...movies.map((m) { m['_type'] = 'movie'; return m; }), ...tvShows.map((t) { t['_type'] = 'tv'; return t; })];
+      // 1. Tách ngôn ngữ/quốc gia khỏi truy vấn
+      final langMaps = [
+        {'keys': ['hàn quốc', 'phim hàn'], 'code': 'ko'},
+        {'keys': ['trung quốc', 'phim trung'], 'code': 'zh'},
+        {'keys': ['nhật bản', 'phim nhật'], 'code': 'ja'},
+        {'keys': ['việt nam', 'phim việt'], 'code': 'vi'},
+        {'keys': ['thái lan', 'phim thái'], 'code': 'th'},
+        {'keys': ['mỹ', 'âu mỹ', 'phim mỹ'], 'code': 'en'},
+        {'keys': ['ấn độ', 'phim ấn'], 'code': 'hi'},
+      ];
+
+      String? origLang;
+      String cleanQuery = query.toLowerCase();
+
+      for (final item in langMaps) {
+        final keys = item['keys'] as List<String>;
+        for (final key in keys) {
+          if (cleanQuery.contains(key)) {
+            origLang = item['code'] as String;
+            cleanQuery = cleanQuery.replaceAll(key, '').trim();
+            break;
+          }
+        }
+        if (origLang != null) break;
+      }
+
+      // 2. Tách năm
+      String? year;
+      final yearRegex = RegExp(r'\s?\(?(19\d{2}|20\d{2})\)?$');
+      final match = yearRegex.firstMatch(cleanQuery);
+      if (match != null) {
+        year = match.group(1);
+        cleanQuery = cleanQuery.replaceAll(match.group(0)!, '').trim();
+      }
+
+      final isAdvanced = origLang != null || year != null;
+      final isPureDiscover = isAdvanced && cleanQuery.length < 2;
+
+      Map<String, dynamic> moviesData;
+      Map<String, dynamic> tvShowsData;
+
+      if (isPureDiscover) {
+        moviesData = await ApiService.discover('movie', year: year, origLang: origLang);
+        tvShowsData = await ApiService.discover('tv', year: year, origLang: origLang);
+      } else {
+        final queryToSearch = cleanQuery.isNotEmpty ? cleanQuery : query;
+        moviesData = await ApiService.searchMovies(queryToSearch, year: year);
+        tvShowsData = await ApiService.searchTV(queryToSearch, year: year);
+      }
+
+      final movies = (moviesData['results'] as List?) ?? [];
+      final tvShows = (tvShowsData['results'] as List?) ?? [];
+      final all = [
+        ...movies.map((m) { m['_type'] = 'movie'; return m; }),
+        ...tvShows.map((t) { t['_type'] = 'tv'; return t; })
+      ];
 
       final movieIds = movies.map<int>((m) => m['id'] as int).toList();
       final tvIds = tvShows.map<int>((t) => t['id'] as int).toList();
       Map<String, dynamic> cached = {};
       try { cached = await ApiService.batchCheck(movieIds, tvIds); } catch (_) {}
 
+      // 3. Lọc chỉ giữ lại phim có link Fshare (đồng bộ onlyWithLinks trên PC)
+      final filteredAll = all.where((item) {
+        final id = item['id'].toString();
+        return cached[id]?['cached'] == true;
+      }).toList();
+
       if (mounted) {
-        setState(() { _pageResults = all; _cachedFshare = cached; _pageLoading = false; });
+        setState(() {
+          // Phương án dự phòng: nếu lọc xong không còn phim nào thì hiển thị toàn bộ kết quả tìm kiếm được
+          _pageResults = filteredAll.isNotEmpty ? filteredAll : all;
+          _cachedFshare = cached;
+          _pageLoading = false;
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _pageLoading = false);

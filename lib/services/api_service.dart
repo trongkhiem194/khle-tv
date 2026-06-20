@@ -75,11 +75,11 @@ class ApiService {
   }
 
   // ── Discover ──
-  static Future<Map<String, dynamic>> discover(String type, {String? genreId, int page = 1}) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/tmdb/discover/$type?genre=${genreId ?? ''}&page=$page&lang=$lang'),
-      headers: _headers,
-    );
+  static Future<Map<String, dynamic>> discover(String type, {String? genreId, int page = 1, String? year, String? origLang}) async {
+    String url = '$baseUrl/api/tmdb/discover/$type?genre=${genreId ?? ''}&page=$page&lang=$lang';
+    if (year != null && year.isNotEmpty) url += '&year=$year';
+    if (origLang != null && origLang.isNotEmpty) url += '&orig_lang=$origLang';
+    final res = await http.get(Uri.parse(url), headers: _headers);
     return json.decode(res.body);
   }
 

@@ -41,6 +41,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           _loading = false;
           _sourcesLoading = false;
         });
+
+        if (_sources.isNotEmpty) {
+          _selectSource(0);
+        }
       }
     } catch (e) {
       debugPrint('Error: $e');
@@ -223,146 +227,130 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('📂 Chọn Nguồn Fshare', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const Text('📂 Danh sách Nguồn Phim', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                   const SizedBox(height: 16),
-
-                  // Source list — dùng Material/InkWell cho D-pad
                   if (_sourcesLoading)
-                    const Center(child: CircularProgressIndicator(color: Color(0xFFE50914)))
+                    const Expanded(child: Center(child: CircularProgressIndicator(color: Color(0xFFE50914))))
                   else if (_sources.isEmpty)
-                    Center(child: Text('Chưa có nguồn Fshare cho phim này', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))))
+                    Expanded(child: Center(child: Text('Chưa có nguồn Fshare cho phim này', style: TextStyle(color: Colors.white.withValues(alpha: 0.5)))))
                   else
-                    SizedBox(
-                      height: 55,
+                    Expanded(
                       child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
                         itemCount: _sources.length,
-                        itemBuilder: (_, i) {
-                          final s = _sources[i];
-                          final active = i == _selectedSource;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Material(
-                              color: active ? const Color(0xFFE50914) : const Color(0xFF1C1C30),
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                onTap: () => _selectSource(i),
-                                borderRadius: BorderRadius.circular(10),
-                                focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-                                hoverColor: const Color(0xFFE50914).withValues(alpha: 0.2),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: active ? const Color(0xFFE50914) : Colors.white12),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(s['sheet_name'] ?? 'Nguồn ${i + 1}',
-                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: active ? Colors.white : Colors.white70)),
-                                      Text(s['size'] ?? '', style: TextStyle(fontSize: 10, color: active ? Colors.white70 : Colors.white38)),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                        itemBuilder: (context, index) {
+                          final s = _sources[index];
+                          final isSelected = index == _selectedSource;
+                          final uploader = s['uploader']?.toString() ?? 'unknown';
+                          final sheetName = s['sheet_name']?.toString() ?? '';
+                          final size = s['size']?.toString() ?? '';
+                          Color uploaderColor = uploader.toLowerCase() == 'vietmediaf' ? const Color(0xFFE50914) : (uploader.toLowerCase() == 'thuvienhd' ? const Color(0xFF3B82F6) : const Color(0xFF10B981));
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1C1C30),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isSelected ? const Color(0xFFE50914) : Colors.white12, width: isSelected ? 1.5 : 1.0),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-
-                  const SizedBox(height: 20),
-
-                  // File list — dùng Material/InkWell cho D-pad
-                  if (_selectedSource >= 0) ...[
-                    Row(
-                      children: [
-                        Text('🎬 Danh sách file', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.9))),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '(Mẹo: Nên ưu tiên chọn các nguồn nhẹ 1.5GB - 4GB để xem mượt nhất)',
-                            style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4), fontStyle: FontStyle.italic),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (_filesLoading)
-                      const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: Color(0xFFE50914))))
-                    else if (_folderFiles.isEmpty)
-                      Center(child: Text('Không tìm thấy file video', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))))
-                    else
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: _folderFiles.length,
-                          itemBuilder: (_, i) {
-                            final f = _folderFiles[i];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Material(
-                                color: const Color(0xFF1C1C30),
-                                borderRadius: BorderRadius.circular(10),
-                                child: InkWell(
-                                  onTap: () => _playFile(f),
-                                  borderRadius: BorderRadius.circular(10),
-                                  focusColor: const Color(0xFFE50914).withValues(alpha: 0.3),
-                                  hoverColor: Colors.white.withValues(alpha: 0.05),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: Colors.white10),
-                                    ),
+                            child: Column(
+                              children: [
+                                ListTile(
+                                  onTap: () => _selectSource(index),
+                                  leading: const Icon(Icons.folder, color: Color(0xFFFFD700), size: 28),
+                                  title: Text(sheetName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 4),
                                     child: Row(
                                       children: [
-                                        const Icon(Icons.play_circle_fill, color: Color(0xFFE50914), size: 36),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(f['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                              const SizedBox(height: 2),
-                                              Text(f['sizeFormatted'] ?? '', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFE50914),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: uploaderColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: uploaderColor.withValues(alpha: 0.3)),
                                           ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.play_arrow, size: 18, color: Colors.white),
-                                              SizedBox(width: 4),
-                                              Text('Xem', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13)),
-                                            ],
+                                          child: Text(
+                                            uploader.toUpperCase(),
+                                            style: TextStyle(color: uploaderColor, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5),
                                           ),
                                         ),
+                                        if (size.isNotEmpty) ...[
+                                          const SizedBox(width: 8),
+                                          Text(size, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11)),
+                                        ],
                                       ],
                                     ),
                                   ),
+                                  trailing: Icon(isSelected ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.white38),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                  ] else
-                    Expanded(
-                      child: Center(
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.touch_app, size: 48, color: Colors.white.withValues(alpha: 0.2)),
-                          const SizedBox(height: 12),
-                          Text('Chọn một nguồn ở trên để xem danh sách file', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-                        ]),
+                                if (isSelected) ...[
+                                  const Divider(color: Colors.white10, height: 1),
+                                  if (_filesLoading)
+                                    const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: Color(0xFFE50914)))
+                                  else if (_folderFiles.isEmpty)
+                                    const Padding(padding: EdgeInsets.all(24), child: Text('Không tìm thấy file video', style: TextStyle(color: Colors.white38, fontSize: 13)))
+                                  else
+                                    ListView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: _folderFiles.length,
+                                      itemBuilder: (_, fIdx) {
+                                        final f = _folderFiles[fIdx];
+                                        return Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () => _playFile(f),
+                                            focusColor: const Color(0xFFE50914).withValues(alpha: 0.25),
+                                            hoverColor: Colors.white.withValues(alpha: 0.05),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                              decoration: const BoxDecoration(
+                                                border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.play_circle_fill, color: Color(0xFFE50914), size: 28),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(f['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                                        if (f['sizeFormatted'] != null) ...[
+                                                          const SizedBox(height: 2),
+                                                          Text(f['sizeFormatted'], style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFE50914),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: const Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Icon(Icons.play_arrow, size: 14, color: Colors.white),
+                                                        SizedBox(width: 2),
+                                                        Text('Xem', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 12)),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                 ],
