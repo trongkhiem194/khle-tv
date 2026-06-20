@@ -46,7 +46,7 @@ class _MovieCardState extends State<MovieCard> {
         onFocusChange: (f) => setState(() => _focused = f),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          transform: _focused ? (Matrix4.identity()..scale(1.05)) : Matrix4.identity(),
+          transform: _focused ? Matrix4.diagonal3Values(1.05, 1.05, 1.0) : Matrix4.identity(),
           transformAlignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),

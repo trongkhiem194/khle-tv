@@ -72,10 +72,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 await FshareService.logout();
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
-                }
+                navigator.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (_) => false,
+                );
               },
               icon: const Icon(Icons.logout),
               label: const Text('Đăng xuất', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -117,7 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
+          Text(label, style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
           Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
         ],
       ),

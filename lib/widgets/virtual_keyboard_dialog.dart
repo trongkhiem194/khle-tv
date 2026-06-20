@@ -262,38 +262,30 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                     itemCount: _keys.length,
                     itemBuilder: (ctx, idx) {
                       final keyStr = _keys[idx];
-                      return Focus(
-                        autofocus: idx == 0, // Tự động bắt nét vào phím chữ A đầu tiên
-                        child: Builder(
-                          builder: (context) {
-                            final hasFocus = Focus.of(context).hasFocus;
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                                  width: 2,
-                                ),
+                      return DPadFocusBuilder(
+                        autofocus: idx == 0,
+                        onTap: () => _append(keyStr),
+                        builder: (context, hasFocus) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                width: 2,
                               ),
-                              child: InkWell(
-                                onTap: () => _append(keyStr),
-                                borderRadius: BorderRadius.circular(6),
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    keyStr,
-                                    style: TextStyle(
-                                      color: hasFocus ? Colors.black : Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              keyStr,
+                              style: TextStyle(
+                                color: hasFocus ? Colors.black : Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                               ),
-                            );
-                          }
-                        ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -321,48 +313,54 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Focus(
-                        child: Builder(
-                          builder: (context) {
-                            final hasFocus = Focus.of(context).hasFocus;
-                            return TextButton(
-                              style: TextButton.styleFrom(
-                                backgroundColor: hasFocus ? Colors.white : Colors.transparent,
-                                foregroundColor: hasFocus ? Colors.black : Colors.white70,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.transparent),
-                                ),
+                      DPadFocusBuilder(
+                        onTap: () => Navigator.pop(context),
+                        builder: (context, hasFocus) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: hasFocus ? Colors.white : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                width: 2,
                               ),
-                              onPressed: () => Navigator.pop(context),
-                              child: const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: Text('Hủy', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                            child: Text(
+                              'Hủy',
+                              style: TextStyle(
+                                color: hasFocus ? Colors.black : Colors.white70,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
                               ),
-                            );
-                          }
-                        ),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(width: 12),
-                      Focus(
-                        child: Builder(
-                          builder: (context) {
-                            final hasFocus = Focus.of(context).hasFocus;
-                            return ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: hasFocus ? Colors.white : const Color(0xFFE50914),
-                                foregroundColor: hasFocus ? const Color(0xFFE50914) : Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.transparent),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      DPadFocusBuilder(
+                        onTap: () => Navigator.pop(context, _ctrl.text),
+                        builder: (context, hasFocus) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: hasFocus ? Colors.white : const Color(0xFFE50914),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                width: 2,
                               ),
-                              onPressed: () => Navigator.pop(context, _ctrl.text),
-                              child: const Text('Tìm', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                            );
-                          }
-                        ),
+                            ),
+                            child: Text(
+                              'Tìm',
+                              style: TextStyle(
+                                color: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -376,96 +374,80 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
   }
 
   Widget _voiceSearchButton() {
-    return Focus(
-      child: Builder(
-        builder: (context) {
-          final hasFocus = Focus.of(context).hasFocus;
-          return Container(
-            decoration: BoxDecoration(
-              color: _listening
-                  ? const Color(0xFFE50914)
-                  : (hasFocus ? Colors.white : const Color(0xFF1C1C30)),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                width: 2,
-              ),
+    return DPadFocusBuilder(
+      onTap: _listening ? _stopListening : _startListening,
+      builder: (context, hasFocus) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: _listening
+                ? const Color(0xFFE50914)
+                : (hasFocus ? Colors.white : const Color(0xFF1C1C30)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+              width: 2,
             ),
-            child: InkWell(
-              onTap: _listening ? _stopListening : _startListening,
-              borderRadius: BorderRadius.circular(18),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _listening ? Icons.mic : Icons.mic_none,
-                      color: _listening
-                          ? Colors.white
-                          : (hasFocus ? const Color(0xFFE50914) : Colors.white70),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _listening ? 'Đang nghe...' : 'Giọng nói',
-                      style: TextStyle(
-                        color: _listening
-                            ? Colors.white
-                            : (hasFocus ? Colors.black : Colors.white70),
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _listening ? Icons.mic : Icons.mic_none,
+                color: _listening
+                    ? Colors.white
+                    : (hasFocus ? const Color(0xFFE50914) : Colors.white70),
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _listening ? 'Đang nghe...' : 'Giọng nói',
+                style: TextStyle(
+                  color: _listening
+                      ? Colors.white
+                      : (hasFocus ? Colors.black : Colors.white70),
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-          );
-        }
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _actionButton(String label, IconData icon, VoidCallback onTap) {
-    return Focus(
-      child: Builder(
-        builder: (context) {
-          final hasFocus = Focus.of(context).hasFocus;
-          return Container(
-            decoration: BoxDecoration(
-              color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                width: 2,
-              ),
+    return DPadFocusBuilder(
+      onTap: onTap,
+      builder: (context, hasFocus) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+              width: 2,
             ),
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, size: 16, color: hasFocus ? Colors.black : Colors.white70),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: hasFocus ? Colors.black : Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: hasFocus ? Colors.black : Colors.white70),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: hasFocus ? Colors.black : Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-          );
-        }
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -475,84 +457,131 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
     final posterPath = movie['poster_path']?.toString() ?? '';
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Focus(
-        child: Builder(
-          builder: (context) {
-            final hasFocus = Focus.of(context).hasFocus;
-            return Container(
-              decoration: BoxDecoration(
-                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                  width: 2,
+    return DPadFocusBuilder(
+      onTap: () {
+        Navigator.pop(context, movie); // Trả về Map thông tin phim trực tiếp
+      },
+      builder: (context, hasFocus) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.all(8.0),
+          decoration: BoxDecoration(
+            color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            children: [
+              if (posterPath.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(
+                    imageUrl: ApiService.posterUrl(posterPath, size: 'w92'),
+                    width: 32,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(width: 32, height: 48, color: Colors.white12),
+                  ),
+                )
+              else
+                Container(
+                  width: 32,
+                  height: 48,
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)),
+                  child: const Icon(Icons.movie, size: 16, color: Colors.white24),
                 ),
-              ),
-              child: InkWell(
-                onTap: () {
-                  Navigator.pop(context, movie); // Trả về Map thông tin phim trực tiếp
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    children: [
-                      if (posterPath.isNotEmpty)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
-                            imageUrl: ApiService.posterUrl(posterPath, size: 'w92'),
-                            width: 32,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => Container(width: 32, height: 48, color: Colors.white12),
-                          ),
-                        )
-                      else
-                        Container(
-                          width: 32,
-                          height: 48,
-                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)),
-                          child: const Icon(Icons.movie, size: 16, color: Colors.white24),
-                        ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                color: hasFocus ? Colors.black : Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (year.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                year,
-                                style: TextStyle(
-                                  color: hasFocus ? Colors.black54 : Colors.white54,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: hasFocus ? Colors.black : Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (year.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        year,
+                        style: TextStyle(
+                          color: hasFocus ? Colors.black54 : Colors.white54,
+                          fontSize: 11,
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-            );
-          }
-        ),
-      ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class DPadFocusBuilder extends StatefulWidget {
+  final bool autofocus;
+  final VoidCallback onTap;
+  final Widget Function(BuildContext context, bool hasFocus) builder;
+
+  const DPadFocusBuilder({
+    super.key,
+    required this.onTap,
+    required this.builder,
+    this.autofocus = false,
+  });
+
+  @override
+  State<DPadFocusBuilder> createState() => _DPadFocusBuilderState();
+}
+
+class _DPadFocusBuilderState extends State<DPadFocusBuilder> {
+  late final FocusNode _node;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _node = FocusNode();
+    _node.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _node.removeListener(_onFocusChange);
+    _node.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _node.hasFocus;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      focusNode: _node,
+      autofocus: widget.autofocus,
+      onTap: widget.onTap,
+      focusColor: Colors.transparent,
+      hoverColor: Colors.transparent,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      child: widget.builder(context, _hasFocus),
     );
   }
 }

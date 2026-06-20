@@ -12,7 +12,7 @@ class UpdateService {
   // Đổi owner/repo thành GitHub repo của bạn
   static const String githubOwner = 'trongkhiem194';
   static const String githubRepo = 'khle-tv';
-  static const String currentVersion = '1.1.10';
+  static const String currentVersion = '1.1.11';
 
   static const String _apiUrl =
       'https://api.github.com/repos/$githubOwner/$githubRepo/releases/latest';
@@ -60,8 +60,12 @@ class UpdateService {
   static bool _isNewer(String latest, String current) {
     final l = latest.split('.').map((s) => int.tryParse(s) ?? 0).toList();
     final c = current.split('.').map((s) => int.tryParse(s) ?? 0).toList();
-    while (l.length < 3) l.add(0);
-    while (c.length < 3) c.add(0);
+    while (l.length < 3) {
+      l.add(0);
+    }
+    while (c.length < 3) {
+      c.add(0);
+    }
     for (int i = 0; i < 3; i++) {
       if (l[i] > c[i]) return true;
       if (l[i] < c[i]) return false;
