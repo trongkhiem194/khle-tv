@@ -91,9 +91,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // Cấu hình bắt buộc đệm trước để tránh hiện tượng giật cục khi mạng chập chờn
         nativePlayer.setProperty('cache-pause', 'yes');
         nativePlayer.setProperty('cache-pause-initial', 'yes'); // Yêu cầu đệm ban đầu trước khi phát
-        nativePlayer.setProperty('cache-pause-wait', '10'); // Đệm đủ ít nhất 10 giây phim mới bắt đầu chạy tiếp
+        nativePlayer.setProperty('cache-pause-wait', '5'); // Đệm đủ ít nhất 5 giây phim mới bắt đầu chạy tiếp
 
-        debugPrint("[Player] Custom Native Player properties (mediacodec, 128MiB buffer & 10s prebuffer) configured.");
+        debugPrint("[Player] Custom Native Player properties (mediacodec, 128MiB buffer & 5s prebuffer) configured.");
       } catch (e) {
         debugPrint("[Player] Error setting Native Player properties: $e");
       }

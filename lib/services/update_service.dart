@@ -12,7 +12,7 @@ class UpdateService {
   // Đổi owner/repo thành GitHub repo của bạn
   static const String githubOwner = 'trongkhiem194';
   static const String githubRepo = 'khle-tv';
-  static const String currentVersion = '1.1.2';
+  static const String currentVersion = '1.1.3';
 
   static const String _apiUrl =
       'https://api.github.com/repos/$githubOwner/$githubRepo/releases/latest';
