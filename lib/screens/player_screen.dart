@@ -77,19 +77,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // Sử dụng mediacodec để giải mã trực tiếp lên màn hình (Direct Hardware Decoding)
         nativePlayer.setProperty('hwdec', 'mediacodec');
         nativePlayer.setProperty('vd-lavc-dr', 'yes');
-        // Giới hạn buffer demuxer ở mức 64MiB để tối ưu cho Chromecast 4K
-        nativePlayer.setProperty('demuxer-max-bytes', '64MiB');
-        nativePlayer.setProperty('demuxer-max-back-bytes', '16MiB');
+        // Giới hạn buffer demuxer ở mức 128MiB để tối ưu cho Chromecast 4K
+        nativePlayer.setProperty('demuxer-max-bytes', '128MiB');
+        nativePlayer.setProperty('demuxer-max-back-bytes', '32MiB');
         nativePlayer.setProperty('cache', 'yes');
-        nativePlayer.setProperty('cache-secs', '45'); // Buffer trước 45 giây
+        nativePlayer.setProperty('cache-secs', '60'); // Buffer trước 60 giây
 
         // ═══ Tối ưu hóa nâng cao cho TV Box & Chromecast 4K ═══
         nativePlayer.setProperty('tls-verify', 'no'); // Bỏ qua xác thực TLS giúp tải luồng phim nhanh hơn
         nativePlayer.setProperty('audio-channels', 'stereo'); // Ép downmix về Stereo trong decoder để tiết kiệm CPU
         nativePlayer.setProperty('sub-ass-override', 'yes'); // Loại bỏ định dạng phụ đề ASS phức tạp, chuyển về dạng chữ phẳng đơn giản
-        nativePlayer.setProperty('cache-pause-initial-skip', 'yes'); // Không dừng khựng chờ tải đầy bộ đệm ban đầu
+        
+        // Cấu hình bắt buộc đệm trước để tránh hiện tượng giật cục khi mạng chập chờn
+        nativePlayer.setProperty('cache-pause', 'yes');
+        nativePlayer.setProperty('cache-pause-initial', 'yes'); // Yêu cầu đệm ban đầu trước khi phát
+        nativePlayer.setProperty('cache-pause-wait', '10'); // Đệm đủ ít nhất 10 giây phim mới bắt đầu chạy tiếp
 
-        debugPrint("[Player] Custom Native Player properties (mediacodec, 64MiB buffer & TV optimizations) configured.");
+        debugPrint("[Player] Custom Native Player properties (mediacodec, 128MiB buffer & 10s prebuffer) configured.");
       } catch (e) {
         debugPrint("[Player] Error setting Native Player properties: $e");
       }
