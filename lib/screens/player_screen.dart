@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/proxy_service.dart';
 
 class PlayerScreen extends StatefulWidget {
   final String videoUrl;
@@ -117,7 +118,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) setState(() { _audioTracks = t.audio; _subtitleTracks = t.subtitle; });
     }));
 
-    _player.open(Media(widget.videoUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
+    // Khởi động proxy đa luồng cục bộ trước khi truyền URL phát vào player
+    FshareParallelProxy.start().then((port) {
+      if (mounted) {
+        if (port > 0) {
+          final proxyUrl = FshareParallelProxy.getProxyUrl(widget.videoUrl);
+          debugPrint("[Player] Playing via local parallel proxy: $proxyUrl");
+          _player.open(Media(proxyUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
+        } else {
+          debugPrint("[Player] Proxy start failed, falling back to direct play.");
+          _player.open(Media(widget.videoUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
+        }
+      }
+    });
     _startHideTimer();
   }
 
@@ -132,6 +145,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _hideTimer?.cancel();
     _player.dispose();
     WakelockPlus.disable();
+    FshareParallelProxy.stop(); // Tắt máy chủ proxy cục bộ
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
