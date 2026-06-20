@@ -234,9 +234,9 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                                 style: const TextStyle(color: Colors.white38, fontSize: 13),
                               ),
                             )
-                          : ListView.builder(
-                              itemCount: _suggestions.length,
-                              itemBuilder: (_, idx) => _suggestionItem(_suggestions[idx]),
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: _suggestions.map<Widget>((s) => _suggestionItem(s)).toList(),
                             )),
                   ),
                 ],

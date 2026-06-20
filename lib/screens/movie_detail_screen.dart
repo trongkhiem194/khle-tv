@@ -346,12 +346,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                       ),
                                     )
                                   else
-                                    ListView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      itemCount: _folderFiles.length,
-                                      itemBuilder: (_, fIdx) {
-                                        final f = _folderFiles[fIdx];
+                                    Column(
+                                      children: _folderFiles.map<Widget>((f) {
                                         return DPadFocusBuilder(
                                           onTap: () => _playFile(f),
                                           builder: (context, fileHasFocus) {
@@ -424,7 +420,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                             );
                                           },
                                         );
-                                      },
+                                      }).toList(),
                                     ),
                                 ],
                               ],
