@@ -125,12 +125,12 @@ class FshareParallelProxy {
 
     try {
       // 1. Gửi request nhỏ ban đầu để lấy Content-Length và Content-Type từ máy chủ Fshare
-      final initialReq = await _ioClient.openUrl('GET', originalUrl);
+      final initialReq = await _ioClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
       upstreamHeaders.forEach((k, v) => initialReq.headers.set(k, v));
       initialReq.headers.set('Range', 'bytes=$startByte-${startByte + 1}');
 
       debugPrint('[Proxy] Sending initial probe to: $originalUrl');
-      final initialRes = await initialReq.close();
+      final initialRes = await initialReq.close().timeout(const Duration(seconds: 10));
       debugPrint('[Proxy] Probe response status: ${initialRes.statusCode}. Headers: ${initialRes.headers}');
 
       final contentType = initialRes.headers.value(HttpHeaders.contentTypeHeader) ?? 'video/mp4';
@@ -157,11 +157,11 @@ class FshareParallelProxy {
       // tiến hành truyền phát trực tiếp (Direct Forward) qua HTTP Client thông thường
       if (totalLength == 0 || initialRes.statusCode >= 400) {
         debugPrint('[Proxy] Falling back to direct forwarding. Status: ${initialRes.statusCode}');
-        final fallReq = await _ioClient.openUrl('GET', originalUrl);
+        final fallReq = await _ioClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
         upstreamHeaders.forEach((k, v) => fallReq.headers.set(k, v));
         if (rangeHeader != null) fallReq.headers.set('Range', rangeHeader);
         
-        final fallRes = await fallReq.close();
+        final fallRes = await fallReq.close().timeout(const Duration(seconds: 10));
         request.response.statusCode = fallRes.statusCode;
         fallRes.headers.forEach((k, v) => request.response.headers.set(k, v.join(', ')));
         
@@ -208,34 +208,38 @@ class FshareParallelProxy {
         }
       });
 
-      // Hàm tải độc lập một chunk dữ liệu sử dụng HttpClient thô (autoUncompress = false)
+      // Hàm tải độc lập một chunk dữ liệu sử dụng HttpClient thô (autoUncompress = false) và có timeout
       Future<List<int>?> downloadChunk(int chunkStart) async {
         if (clientDisconnected) return null;
 
         final chunkEnd = (chunkStart + chunkSize - 1).clamp(0, endByte!);
         if (chunkStart > chunkEnd) return null;
 
-        final chunkClient = HttpClient()..autoUncompress = false;
+        final chunkClient = HttpClient()
+          ..autoUncompress = false
+          ..connectionTimeout = const Duration(seconds: 8);
         activeClients.add(chunkClient);
 
         try {
-          final chunkReq = await chunkClient.openUrl('GET', originalUrl);
+          final chunkReq = await chunkClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
           upstreamHeaders.forEach((k, v) => chunkReq.headers.set(k, v));
           chunkReq.headers.set('Range', 'bytes=$chunkStart-$chunkEnd');
 
-          final chunkRes = await chunkReq.close();
+          final chunkRes = await chunkReq.close().timeout(const Duration(seconds: 10));
           if (chunkRes.statusCode == 200 || chunkRes.statusCode == 206) {
             final builder = BytesBuilder();
-            await for (final data in chunkRes) {
-              if (clientDisconnected) break;
-              builder.add(data);
-            }
+            // Đọc stream dữ liệu với timeout tối đa 15 giây
+            await chunkRes.timeout(const Duration(seconds: 15)).forEach((data) {
+              if (!clientDisconnected) {
+                builder.add(data);
+              }
+            });
             activeClients.remove(chunkClient);
             chunkClient.close();
             return builder.takeBytes();
           }
-        } catch (_) {
-          // Bắt lỗi kết nối bị hủy
+        } catch (e) {
+          debugPrint('[Proxy] downloadChunk error at $chunkStart: $e');
         } finally {
           activeClients.remove(chunkClient);
           chunkClient.close();

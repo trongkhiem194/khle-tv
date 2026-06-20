@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/proxy_service.dart';
 
@@ -46,6 +47,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isSeeking = false;
   Duration _seekPosition = Duration.zero;
 
+  double _subSize = 55.0;
+  DateTime _lastSaveTime = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -56,12 +60,105 @@ class _PlayerScreenState extends State<PlayerScreen> {
     SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     WakelockPlus.enable();
     _initPlayer();
+    _loadSettings();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _playPauseFocusNode.requestFocus();
       }
     });
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final size = prefs.getDouble('sub_size') ?? 55.0;
+      setState(() {
+        _subSize = size;
+      });
+      if (_player.platform is NativePlayer) {
+        final nativePlayer = _player.platform as NativePlayer;
+        nativePlayer.setProperty('sub-font-size', size.round().toString());
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveProgress(Duration p) async {
+    final now = DateTime.now();
+    if (now.difference(_lastSaveTime).inSeconds < 5) return;
+    _lastSaveTime = now;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'progress_${widget.title}_${widget.fileName}';
+      if (p.inSeconds > 10 && _duration.inSeconds > 0 && p.inSeconds < _duration.inSeconds - 30) {
+        await prefs.setInt(key, p.inSeconds);
+      } else if (p.inSeconds >= _duration.inSeconds - 30 && _duration.inSeconds > 0) {
+        await prefs.remove(key);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveProgressImmediately() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'progress_${widget.title}_${widget.fileName}';
+      final p = _player.state.position;
+      final d = _player.state.duration;
+      if (p.inSeconds > 10 && d.inSeconds > 0 && p.inSeconds < d.inSeconds - 30) {
+        await prefs.setInt(key, p.inSeconds);
+      } else if (p.inSeconds >= d.inSeconds - 30 && d.inSeconds > 0) {
+        await prefs.remove(key);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkResumeProgress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'progress_${widget.title}_${widget.fileName}';
+      final savedSeconds = prefs.getInt(key) ?? 0;
+      if (savedSeconds > 10 && mounted) {
+        final savedDuration = Duration(seconds: savedSeconds);
+        if (!mounted) return;
+        final resume = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF15151F),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(children: [
+              Icon(Icons.history, color: Color(0xFFE50914), size: 24),
+              SizedBox(width: 8),
+              Text('Tiếp tục xem', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 18)),
+            ]),
+            content: Text(
+              'Bạn có muốn tiếp tục xem từ ${_fmt(savedDuration)} không?',
+              style: const TextStyle(color: Colors.white70, fontSize: 15),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Xem từ đầu', style: TextStyle(color: Colors.white38, fontSize: 14)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE50914),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Tiếp tục', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+            ],
+          ),
+        );
+
+        if (resume == true && mounted) {
+          _player.seek(savedDuration);
+        }
+      }
+    } catch (_) {}
   }
 
   void _initPlayer() {
@@ -108,7 +205,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
 
     _subs.add(_player.stream.position.listen((p) {
-      if (mounted && !_isSeeking) setState(() => _position = p);
+      if (mounted && !_isSeeking) {
+        setState(() => _position = p);
+        _saveProgress(p);
+      }
     }));
     _subs.add(_player.stream.duration.listen((d) { if (mounted) setState(() => _duration = d); }));
     _subs.add(_player.stream.playing.listen((p) { if (mounted) setState(() => _playing = p); }));
@@ -125,11 +225,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
           final localIp = await FshareParallelProxy.getLocalIp();
           final proxyUrl = FshareParallelProxy.getProxyUrl(widget.videoUrl, localIp);
           debugPrint("[Player] Playing via local parallel proxy ($localIp): $proxyUrl");
-          _player.open(Media(proxyUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
+          await _player.open(Media(proxyUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
         } else {
           debugPrint("[Player] Proxy start failed, falling back to direct play.");
-          _player.open(Media(widget.videoUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
+          await _player.open(Media(widget.videoUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
         }
+
+        // Áp dụng kích thước phụ đề từ SharedPreferences
+        if (_player.platform is NativePlayer) {
+          try {
+            final nativePlayer = _player.platform as NativePlayer;
+            nativePlayer.setProperty('sub-font-size', _subSize.round().toString());
+          } catch (_) {}
+        }
+
+        _checkResumeProgress();
       }
     });
     _startHideTimer();
@@ -144,6 +254,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       s.cancel();
     }
     _hideTimer?.cancel();
+    _saveProgressImmediately();
     _player.dispose();
     WakelockPlus.disable();
     FshareParallelProxy.stop(); // Tắt máy chủ proxy cục bộ
@@ -289,78 +400,146 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ═══ Subtitle Dialog ═══
   void _showSubDialog() {
     _hideTimer?.cancel();
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      backgroundColor: const Color(0xFF15151F),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(children: [
-        Icon(Icons.subtitles, color: Color(0xFF3B82F6), size: 24),
-        SizedBox(width: 8),
-        Text('Phụ Đề', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 18)),
-      ]),
-      content: SizedBox(
-        width: 350,
-        child: ListView(shrinkWrap: true, children: [
-          // Tắt sub
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Material(
-              color: const Color(0xFF1C1C30),
-              borderRadius: BorderRadius.circular(10),
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, dialogSetState) {
+          Widget subSizeButton(String label, double size) {
+            final active = _subSize == size;
+            return Material(
+              color: active ? const Color(0xFF3B82F6) : const Color(0xFF1C1C30),
+              borderRadius: BorderRadius.circular(8),
               child: InkWell(
-                onTap: () { _player.setSubtitleTrack(SubtitleTrack.no()); Navigator.pop(ctx); _startHideTimer(); },
+                onTap: () async {
+                  dialogSetState(() {
+                    _subSize = size;
+                  });
+                  setState(() {
+                    _subSize = size;
+                  });
+                  if (_player.platform is NativePlayer) {
+                    try {
+                      final nativePlayer = _player.platform as NativePlayer;
+                      nativePlayer.setProperty('sub-font-size', size.round().toString());
+                    } catch (_) {}
+                  }
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setDouble('sub_size', size);
+                },
                 focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(10),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Row(children: [
-                    Icon(Icons.subtitles_off, color: Colors.white54, size: 20),
-                    SizedBox(width: 12),
-                    Text('Tắt phụ đề', style: TextStyle(color: Colors.white70, fontSize: 15)),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-          ..._subtitleTracks.asMap().entries.map((e) {
-            final t = e.value;
-            final label = t.title ?? t.language ?? 'Sub ${e.key + 1}';
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Material(
-                color: const Color(0xFF1C1C30),
-                borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  onTap: () { _player.setSubtitleTrack(t); Navigator.pop(ctx); _startHideTimer(); },
-                  focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(children: [
-                      const Icon(Icons.subtitles, color: Color(0xFF3B82F6), size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 15))),
-                      if (t.language != null) Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                        child: Text(t.language!, style: const TextStyle(fontSize: 12, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600)),
-                      ),
-                    ]),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: active ? Colors.white : Colors.white70,
+                    ),
                   ),
                 ),
               ),
             );
-          }),
-          if (_subtitleTracks.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Text('Video không có phụ đề nhúng', style: TextStyle(color: Colors.white38, fontSize: 14))),
-        ]),
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF15151F),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(children: [
+              Icon(Icons.subtitles, color: Color(0xFF3B82F6), size: 24),
+              SizedBox(width: 8),
+              Text('Cài đặt phụ đề', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 18)),
+            ]),
+            content: SizedBox(
+              width: 380,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Kích thước phụ đề:', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        subSizeButton('Nhỏ', 40),
+                        subSizeButton('Vừa', 55),
+                        subSizeButton('Lớn', 70),
+                        subSizeButton('Rất Lớn', 85),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(color: Colors.white12),
+                    const SizedBox(height: 8),
+                    const Text('Chọn kênh phụ đề:', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    // Tắt sub
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Material(
+                        color: const Color(0xFF1C1C30),
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          onTap: () { _player.setSubtitleTrack(SubtitleTrack.no()); Navigator.pop(ctx); _startHideTimer(); },
+                          focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(10),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(children: [
+                              Icon(Icons.subtitles_off, color: Colors.white54, size: 20),
+                              SizedBox(width: 12),
+                              Text('Tắt phụ đề', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                    ..._subtitleTracks.asMap().entries.map((e) {
+                      final t = e.value;
+                      final label = t.title ?? t.language ?? 'Sub ${e.key + 1}';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Material(
+                          color: const Color(0xFF1C1C30),
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            onTap: () { _player.setSubtitleTrack(t); Navigator.pop(ctx); _startHideTimer(); },
+                            focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Row(children: [
+                                const Icon(Icons.subtitles, color: Color(0xFF3B82F6), size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14))),
+                                if (t.language != null) Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                                  child: Text(t.language!, style: const TextStyle(fontSize: 11, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                    if (_subtitleTracks.isEmpty)
+                      const Padding(padding: EdgeInsets.all(16), child: Text('Video không có phụ đề nhúng', style: TextStyle(color: Colors.white38, fontSize: 14))),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
+                child: const Text('Đóng', style: TextStyle(color: Colors.white38, fontSize: 14)),
+              ),
+            ],
+          );
+        },
       ),
-      actions: [
-        TextButton(
-          onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
-          child: const Text('Đóng', style: TextStyle(color: Colors.white38, fontSize: 14)),
-        ),
-      ],
-    ));
+    );
   }
 
   String _fmt(Duration d) {
