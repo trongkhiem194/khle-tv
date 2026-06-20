@@ -119,11 +119,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }));
 
     // Khởi động proxy đa luồng cục bộ trước khi truyền URL phát vào player
-    FshareParallelProxy.start().then((port) {
+    FshareParallelProxy.start().then((port) async {
       if (mounted) {
         if (port > 0) {
-          final proxyUrl = FshareParallelProxy.getProxyUrl(widget.videoUrl);
-          debugPrint("[Player] Playing via local parallel proxy: $proxyUrl");
+          final localIp = await FshareParallelProxy.getLocalIp();
+          final proxyUrl = FshareParallelProxy.getProxyUrl(widget.videoUrl, localIp);
+          debugPrint("[Player] Playing via local parallel proxy ($localIp): $proxyUrl");
           _player.open(Media(proxyUrl, httpHeaders: {'User-Agent': 'Mozilla/5.0'}));
         } else {
           debugPrint("[Player] Proxy start failed, falling back to direct play.");

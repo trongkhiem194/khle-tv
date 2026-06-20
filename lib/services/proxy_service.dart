@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 /// Máy chủ Proxy đa luồng cục bộ
-/// Tải song song tối đa 3 kết nối đồng thời từ Fshare
+/// Giúp chia nhỏ file video từ Fshare thành từng chunk 3MB và tải song song tối đa 3 kết nối cùng lúc
 class FshareParallelProxy {
   static HttpServer? _server;
   static int? _port;
-  static final http.Client _client = http.Client();
+  
+  // Sử dụng HttpClient gốc với autoUncompress = false để tránh các lỗi nén gzip video của Fshare
+  static final HttpClient _ioClient = HttpClient()
+    ..autoUncompress = false
+    ..connectionTimeout = const Duration(seconds: 15);
 
   /// Khởi động máy chủ Proxy ngầm trên cổng ngẫu nhiên khả dụng (bind 0.0.0.0 cho Android)
   static Future<int> start() async {
@@ -50,12 +54,32 @@ class FshareParallelProxy {
     }
   }
 
-  /// Chuyển đổi link Fshare gốc thành link proxy cục bộ
-  static String getProxyUrl(String originalUrl) {
+  /// Helper lấy địa chỉ IP LAN hiện tại của thiết bị (Wifi hoặc Ethernet) để TV kết nối không bị chặn loopback
+  static Future<String> getLocalIp() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final interface in interfaces) {
+        for (final addr in interface.addresses) {
+          if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+            final ip = addr.address;
+            if (ip.isNotEmpty && ip != '127.0.0.1') {
+              return ip;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return '127.0.0.1'; // Fallback nếu không có kết nối mạng
+  }
+
+  /// Chuyển đổi link Fshare gốc thành link proxy cục bộ sử dụng IP LAN
+  static String getProxyUrl(String originalUrl, String ip) {
     if (_port == null) return originalUrl;
     final encodedUrl = Uri.encodeComponent(originalUrl);
-    // Sử dụng 127.0.0.1 để TV kết nối cục bộ
-    return 'http://127.0.0.1:$_port/stream?url=$encodedUrl';
+    return 'http://$ip:$_port/stream?url=$encodedUrl';
   }
 
   /// Xử lý stream truyền dữ liệu đa luồng
@@ -84,7 +108,7 @@ class FshareParallelProxy {
       }
     }
 
-    // Sao chép và chuyển tiếp toàn bộ header từ player sang Fshare (giúp truyền đi User-Agent, Cookies, v.v...)
+    // Sao chép và chuyển tiếp toàn bộ header từ player sang Fshare (bao gồm Cookie, User-Agent)
     final Map<String, String> upstreamHeaders = {};
     request.headers.forEach((name, values) {
       if (name.toLowerCase() != 'host') {
@@ -101,16 +125,16 @@ class FshareParallelProxy {
 
     try {
       // 1. Gửi request nhỏ ban đầu để lấy Content-Length và Content-Type từ máy chủ Fshare
-      final initialReq = http.Request('GET', originalUrl);
-      upstreamHeaders.forEach((k, v) => initialReq.headers[k] = v);
-      initialReq.headers['Range'] = 'bytes=$startByte-${startByte + 1}';
+      final initialReq = await _ioClient.openUrl('GET', originalUrl);
+      upstreamHeaders.forEach((k, v) => initialReq.headers.set(k, v));
+      initialReq.headers.set('Range', 'bytes=$startByte-${startByte + 1}');
 
       debugPrint('[Proxy] Sending initial probe to: $originalUrl');
-      final initialRes = await _client.send(initialReq);
+      final initialRes = await initialReq.close();
       debugPrint('[Proxy] Probe response status: ${initialRes.statusCode}. Headers: ${initialRes.headers}');
 
-      final contentType = initialRes.headers['content-type'] ?? 'video/mp4';
-      final contentRange = initialRes.headers['content-range'];
+      final contentType = initialRes.headers.value(HttpHeaders.contentTypeHeader) ?? 'video/mp4';
+      final contentRange = initialRes.headers.value(HttpHeaders.contentRangeHeader);
       int totalLength = 0;
 
       if (contentRange != null) {
@@ -121,27 +145,27 @@ class FshareParallelProxy {
       }
 
       if (totalLength == 0) {
-        totalLength = int.tryParse(initialRes.headers['content-length'] ?? '0') ?? 0;
+        totalLength = int.tryParse(initialRes.headers.value(HttpHeaders.contentLengthHeader) ?? '0') ?? 0;
       }
 
-      // Hủy stream kiểm tra ban đầu ngay lập tức để giải phóng connection
+      // Hủy stream kiểm tra ban đầu ngay lập tức
       try {
-        await initialRes.stream.listen((_) {}).cancel();
+        await initialRes.listen((_) {}).cancel();
       } catch (_) {}
 
-      // Nếu không lấy được dung lượng file hoặc Fshare từ chối (ví dụ trả về 403/400),
+      // Nếu không lấy được dung lượng file hoặc Fshare từ chối (403/400),
       // tiến hành truyền phát trực tiếp (Direct Forward) qua HTTP Client thông thường
       if (totalLength == 0 || initialRes.statusCode >= 400) {
-        debugPrint('[Proxy] Falling back to direct single-thread forwarding. Status: ${initialRes.statusCode}');
-        final fallReq = http.Request('GET', originalUrl);
-        upstreamHeaders.forEach((k, v) => fallReq.headers[k] = v);
-        if (rangeHeader != null) fallReq.headers['Range'] = rangeHeader;
+        debugPrint('[Proxy] Falling back to direct forwarding. Status: ${initialRes.statusCode}');
+        final fallReq = await _ioClient.openUrl('GET', originalUrl);
+        upstreamHeaders.forEach((k, v) => fallReq.headers.set(k, v));
+        if (rangeHeader != null) fallReq.headers.set('Range', rangeHeader);
         
-        final fallRes = await _client.send(fallReq);
+        final fallRes = await fallReq.close();
         request.response.statusCode = fallRes.statusCode;
-        fallRes.headers.forEach((k, v) => request.response.headers.set(k, v));
+        fallRes.headers.forEach((k, v) => request.response.headers.set(k, v.join(', ')));
         
-        await request.response.addStream(fallRes.stream);
+        await request.response.addStream(fallRes);
         await request.response.close();
         return;
       }
@@ -161,50 +185,54 @@ class FshareParallelProxy {
       const int maxParallel = 3; // 3 luồng tải song song đồng thời từ Fshare
 
       int currentPos = startByte;
-      final Map<int, Future<Uint8List?>> activeChunks = {};
-      final List<http.Client> activeClients = [];
+      final Map<int, Future<List<int>?>> activeChunks = {};
+      final List<HttpClient> activeClients = [];
       bool clientDisconnected = false;
 
-      // Lắng nghe sự kiện player ngắt kết nối (ví dụ khi tua phim, đóng trình phát)
+      // Lắng nghe sự kiện player ngắt kết nối
       request.response.done.then((_) {
         clientDisconnected = true;
-        final clients = List<http.Client>.from(activeClients);
+        final clients = List<HttpClient>.from(activeClients);
         for (final c in clients) {
           try {
-            c.close();
+            c.close(force: true);
           } catch (_) {}
         }
       }).catchError((_) {
         clientDisconnected = true;
-        final clients = List<http.Client>.from(activeClients);
+        final clients = List<HttpClient>.from(activeClients);
         for (final c in clients) {
           try {
-            c.close();
+            c.close(force: true);
           } catch (_) {}
         }
       });
 
-      // Hàm tải độc lập một chunk dữ liệu
-      Future<Uint8List?> downloadChunk(int chunkStart) async {
+      // Hàm tải độc lập một chunk dữ liệu sử dụng HttpClient thô (autoUncompress = false)
+      Future<List<int>?> downloadChunk(int chunkStart) async {
         if (clientDisconnected) return null;
 
         final chunkEnd = (chunkStart + chunkSize - 1).clamp(0, endByte!);
         if (chunkStart > chunkEnd) return null;
 
-        final chunkClient = http.Client();
+        final chunkClient = HttpClient()..autoUncompress = false;
         activeClients.add(chunkClient);
 
         try {
-          final chunkReq = http.Request('GET', originalUrl);
-          upstreamHeaders.forEach((k, v) => chunkReq.headers[k] = v);
-          chunkReq.headers['Range'] = 'bytes=$chunkStart-$chunkEnd';
+          final chunkReq = await chunkClient.openUrl('GET', originalUrl);
+          upstreamHeaders.forEach((k, v) => chunkReq.headers.set(k, v));
+          chunkReq.headers.set('Range', 'bytes=$chunkStart-$chunkEnd');
 
-          final chunkRes = await chunkClient.send(chunkReq);
+          final chunkRes = await chunkReq.close();
           if (chunkRes.statusCode == 200 || chunkRes.statusCode == 206) {
-            final bytes = await chunkRes.stream.toBytes();
+            final builder = BytesBuilder();
+            await for (final data in chunkRes) {
+              if (clientDisconnected) break;
+              builder.add(data);
+            }
             activeClients.remove(chunkClient);
             chunkClient.close();
-            return bytes;
+            return builder.takeBytes();
           }
         } catch (_) {
           // Bắt lỗi kết nối bị hủy
