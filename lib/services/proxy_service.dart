@@ -4,18 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Máy chủ Proxy đa luồng cục bộ
-/// Giúp chia nhỏ file video từ Fshare thành từng chunk 3MB và tải song song tối đa 3 kết nối cùng lúc
+/// Tải song song tối đa 3 kết nối đồng thời từ Fshare
 class FshareParallelProxy {
   static HttpServer? _server;
   static int? _port;
   static final http.Client _client = http.Client();
 
-  /// Khởi động máy chủ Proxy ngầm trên cổng ngẫu nhiên khả dụng
+  /// Khởi động máy chủ Proxy ngầm trên cổng ngẫu nhiên khả dụng (bind 0.0.0.0 cho Android)
   static Future<int> start() async {
     if (_server != null) return _port!;
 
     try {
-      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      // Bind to 0.0.0.0 (anyIPv4) để tránh các lỗi định tuyến loopback cục bộ trên Android
+      _server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
       _port = _server!.port;
 
       _server!.listen((HttpRequest request) {
@@ -29,7 +30,7 @@ class FshareParallelProxy {
         debugPrint('[Proxy] Server error: $e');
       });
 
-      debugPrint('[Proxy] Server started on port $_port');
+      debugPrint('[Proxy] Server started on port $_port (bound to anyIPv4)');
       return _port!;
     } catch (e) {
       debugPrint('[Proxy] Failed to bind server: $e');
@@ -53,6 +54,7 @@ class FshareParallelProxy {
   static String getProxyUrl(String originalUrl) {
     if (_port == null) return originalUrl;
     final encodedUrl = Uri.encodeComponent(originalUrl);
+    // Sử dụng 127.0.0.1 để TV kết nối cục bộ
     return 'http://127.0.0.1:$_port/stream?url=$encodedUrl';
   }
 
@@ -82,14 +84,30 @@ class FshareParallelProxy {
       }
     }
 
-    debugPrint('[Proxy] Stream request start: byte=$startByte');
+    // Sao chép và chuyển tiếp toàn bộ header từ player sang Fshare (giúp truyền đi User-Agent, Cookies, v.v...)
+    final Map<String, String> upstreamHeaders = {};
+    request.headers.forEach((name, values) {
+      if (name.toLowerCase() != 'host') {
+        upstreamHeaders[name] = values.join(', ');
+      }
+    });
+
+    // Đảm bảo luôn có User-Agent tiêu chuẩn để Fshare không chặn
+    if (!upstreamHeaders.containsKey('user-agent') && !upstreamHeaders.containsKey('User-Agent')) {
+      upstreamHeaders['User-Agent'] = 'Mozilla/5.0';
+    }
+
+    debugPrint('[Proxy] Connection received. Range: $rangeHeader. Forwarding headers: $upstreamHeaders');
 
     try {
       // 1. Gửi request nhỏ ban đầu để lấy Content-Length và Content-Type từ máy chủ Fshare
-      final initialRes = await _client.send(
-        http.Request('GET', originalUrl)
-          ..headers['Range'] = 'bytes=$startByte-${startByte + 1}',
-      );
+      final initialReq = http.Request('GET', originalUrl);
+      upstreamHeaders.forEach((k, v) => initialReq.headers[k] = v);
+      initialReq.headers['Range'] = 'bytes=$startByte-${startByte + 1}';
+
+      debugPrint('[Proxy] Sending initial probe to: $originalUrl');
+      final initialRes = await _client.send(initialReq);
+      debugPrint('[Proxy] Probe response status: ${initialRes.statusCode}. Headers: ${initialRes.headers}');
 
       final contentType = initialRes.headers['content-type'] ?? 'video/mp4';
       final contentRange = initialRes.headers['content-range'];
@@ -111,14 +129,18 @@ class FshareParallelProxy {
         await initialRes.stream.listen((_) {}).cancel();
       } catch (_) {}
 
-      // Nếu không lấy được dung lượng file, fall back về tải trực tiếp từ Fshare
-      if (totalLength == 0) {
-        debugPrint('[Proxy] Cannot get length. Fallback to direct download.');
+      // Nếu không lấy được dung lượng file hoặc Fshare từ chối (ví dụ trả về 403/400),
+      // tiến hành truyền phát trực tiếp (Direct Forward) qua HTTP Client thông thường
+      if (totalLength == 0 || initialRes.statusCode >= 400) {
+        debugPrint('[Proxy] Falling back to direct single-thread forwarding. Status: ${initialRes.statusCode}');
         final fallReq = http.Request('GET', originalUrl);
+        upstreamHeaders.forEach((k, v) => fallReq.headers[k] = v);
         if (rangeHeader != null) fallReq.headers['Range'] = rangeHeader;
+        
         final fallRes = await _client.send(fallReq);
         request.response.statusCode = fallRes.statusCode;
         fallRes.headers.forEach((k, v) => request.response.headers.set(k, v));
+        
         await request.response.addStream(fallRes.stream);
         await request.response.close();
         return;
@@ -173,10 +195,11 @@ class FshareParallelProxy {
         activeClients.add(chunkClient);
 
         try {
-          final chunkReq = http.Request('GET', originalUrl)
-            ..headers['Range'] = 'bytes=$chunkStart-$chunkEnd';
-          final chunkRes = await chunkClient.send(chunkReq);
+          final chunkReq = http.Request('GET', originalUrl);
+          upstreamHeaders.forEach((k, v) => chunkReq.headers[k] = v);
+          chunkReq.headers['Range'] = 'bytes=$chunkStart-$chunkEnd';
 
+          final chunkRes = await chunkClient.send(chunkReq);
           if (chunkRes.statusCode == 200 || chunkRes.statusCode == 206) {
             final bytes = await chunkRes.stream.toBytes();
             activeClients.remove(chunkClient);
@@ -184,7 +207,7 @@ class FshareParallelProxy {
             return bytes;
           }
         } catch (_) {
-          // Bắt lỗi kết nối bị hủy khi Client đóng
+          // Bắt lỗi kết nối bị hủy
         } finally {
           activeClients.remove(chunkClient);
           chunkClient.close();
@@ -211,7 +234,6 @@ class FshareParallelProxy {
         if (clientDisconnected) break;
 
         if (data == null || data.isEmpty) {
-          // Lỗi tải chunk, thử lại đúng chunk đó
           debugPrint('[Proxy] Chunk retry at $currentPos');
           final retryData = await downloadChunk(currentPos);
           if (clientDisconnected) break;
@@ -224,7 +246,7 @@ class FshareParallelProxy {
           request.response.add(data);
         }
 
-        // Tự động đẩy cửa sổ trượt lên, kích hoạt tải trước chunk tiếp theo trong hàng đợi
+        // Tải trước chunk tiếp theo trong hàng đợi
         final nextPreloadPos = currentPos + maxParallel * chunkSize;
         if (nextPreloadPos <= endByte) {
           activeChunks[nextPreloadPos] = downloadChunk(nextPreloadPos);
@@ -234,7 +256,7 @@ class FshareParallelProxy {
       }
 
       await request.response.close();
-      debugPrint('[Proxy] Stream completed for byte: $startByte');
+      debugPrint('[Proxy] Stream completed successfully for byte: $startByte');
     } catch (e) {
       debugPrint('[Proxy] Stream handler error: $e');
       try {
