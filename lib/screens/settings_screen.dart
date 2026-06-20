@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/fshare_service.dart';
+import '../services/update_service.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -61,7 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // App info
           _card('📱 Ứng dụng', [
             _row('Tên', 'Kh.le TV'),
-            _row('Phiên bản', '1.0.0'),
+            _row('Phiên bản', UpdateService.currentVersion),
             _row('Nguồn dữ liệu', 'VietmediaF + TMDB'),
             _row('Stream từ', 'Fshare VIP'),
           ]),

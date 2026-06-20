@@ -22,7 +22,10 @@ class UpdateService {
     try {
       final res = await http.get(
         Uri.parse(_apiUrl),
-        headers: {'Accept': 'application/vnd.github.v3+json'},
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'KhleTV/1.0',
+        },
       ).timeout(const Duration(seconds: 10));
 
       if (res.statusCode != 200) return;
