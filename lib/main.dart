@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'screens/splash_screen.dart';
+import 'services/proxy_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = IPv4HttpOverrides();
   MediaKit.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,

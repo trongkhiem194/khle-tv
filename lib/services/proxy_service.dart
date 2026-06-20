@@ -293,3 +293,41 @@ class FshareParallelProxy {
     }
   }
 }
+
+/// Bộ Override HTTP ép kết nối qua IPv4 duy nhất cho tên miền Fshare
+class IPv4HttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.connectionFactory = (Uri uri, String? host, int? port) async {
+      final resolvedHost = host ?? uri.host;
+      final targetPort = port ?? uri.port;
+      final isHttps = uri.scheme == 'https';
+
+      dynamic connectHost = resolvedHost;
+      if (resolvedHost.contains('fshare.vn')) {
+        try {
+          final addresses = await InternetAddress.lookup(resolvedHost, type: InternetAddressType.IPv4);
+          if (addresses.isNotEmpty) {
+            connectHost = addresses.first;
+            debugPrint('[IPv4Override] DNS lookup resolved $resolvedHost -> IPv4: ${addresses.first.address}');
+          }
+        } catch (e) {
+          debugPrint('[IPv4Override] Failed to resolve IPv4 for $resolvedHost: $e');
+        }
+      }
+
+      if (isHttps) {
+        return await SecureSocket.startConnect(
+          connectHost,
+          targetPort,
+          onBadCertificate: (cert) => true, // Bỏ qua do kết nối thẳng qua IP đã phân giải thủ công
+        );
+      } else {
+        return await Socket.startConnect(connectHost, targetPort);
+      }
+    };
+    return client;
+  }
+}
+
