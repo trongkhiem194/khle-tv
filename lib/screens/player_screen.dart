@@ -76,11 +76,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _subSize = size;
       });
-      if (_player.platform is NativePlayer) {
-        final nativePlayer = _player.platform as NativePlayer;
-        nativePlayer.setProperty('sub-font-size', size.round().toString());
-      }
+      _applySubtitleSize(size);
     } catch (_) {}
+  }
+
+  void _applySubtitleSize(double size) {
+    if (_player.platform is NativePlayer) {
+      try {
+        final nativePlayer = _player.platform as NativePlayer;
+        double scale = 1.0;
+        if (size <= 40) {
+          scale = 0.75;
+        } else if (size <= 55) {
+          scale = 1.0;
+        } else if (size <= 70) {
+          scale = 1.35;
+        } else {
+          scale = 1.7;
+        }
+
+        nativePlayer.setProperty('sub-font-size', size.round().toString());
+        nativePlayer.setProperty('sub-scale', scale.toString());
+        nativePlayer.setProperty('sub-pos', '95'); // Căn lề dưới
+        debugPrint('[Player] Applied subtitle size: $size, scale: $scale');
+      } catch (e) {
+        debugPrint('[Player] Error applying subtitle size: $e');
+      }
+    }
   }
 
   Future<void> _saveProgress(Duration p) async {
@@ -137,18 +159,58 @@ class _PlayerScreenState extends State<PlayerScreen> {
               style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Xem từ đầu', style: TextStyle(color: Colors.white38, fontSize: 14)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE50914),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              Focus(
+                child: Builder(
+                  builder: (context) {
+                    final hasFocus = Focus.of(context).hasFocus;
+                    return ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasFocus ? Colors.white : Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.white12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(
+                        'Xem từ đầu',
+                        style: TextStyle(
+                          color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    );
+                  }
                 ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Tiếp tục', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+              Focus(
+                autofocus: true,
+                child: Builder(
+                  builder: (context) {
+                    final hasFocus = Focus.of(context).hasFocus;
+                    return ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasFocus ? Colors.white : const Color(0xFFE50914),
+                        foregroundColor: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: hasFocus ? Colors.white : Colors.transparent),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(
+                        'Tiếp tục',
+                        style: TextStyle(
+                          color: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                  }
+                ),
               ),
             ],
           ),
@@ -232,12 +294,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
 
         // Áp dụng kích thước phụ đề từ SharedPreferences
-        if (_player.platform is NativePlayer) {
-          try {
-            final nativePlayer = _player.platform as NativePlayer;
-            nativePlayer.setProperty('sub-font-size', _subSize.round().toString());
-          } catch (_) {}
-        }
+        _applySubtitleSize(_subSize);
 
         _checkResumeProgress();
       }
@@ -362,26 +419,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 final label = t.title ?? t.language ?? 'Track ${i + 1}';
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: Material(
-                    color: const Color(0xFF1C1C30),
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      onTap: () { _player.setAudioTrack(t); Navigator.pop(ctx); _startHideTimer(); },
-                      focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        child: Row(children: [
-                          const Icon(Icons.audiotrack, color: Color(0xFFE50914), size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 15))),
-                          if (t.language != null) Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: const Color(0xFFE50914).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                            child: Text(t.language!, style: const TextStyle(fontSize: 12, color: Color(0xFFE50914), fontWeight: FontWeight.w600)),
+                  child: Focus(
+                    autofocus: i == 0,
+                    child: Builder(
+                      builder: (context) {
+                        final hasFocus = Focus.of(context).hasFocus;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                              width: 2,
+                            ),
                           ),
-                        ]),
-                      ),
+                          child: InkWell(
+                            onTap: () { _player.setAudioTrack(t); Navigator.pop(ctx); _startHideTimer(); },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              child: Row(children: [
+                                Icon(Icons.audiotrack, color: hasFocus ? Colors.black : const Color(0xFFE50914), size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(label, style: TextStyle(color: hasFocus ? Colors.black : Colors.white, fontSize: 15))),
+                                if (t.language != null) Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: hasFocus 
+                                        ? const Color(0xFFE50914).withValues(alpha: 0.1) 
+                                        : const Color(0xFFE50914).withValues(alpha: 0.2), 
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    t.language!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: hasFocus ? const Color(0xFFE50914) : const Color(0xFFE50914),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ]),
+                            ),
+                          ),
+                        );
+                      }
                     ),
                   ),
                 );
@@ -389,9 +471,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
       ),
       actions: [
-        TextButton(
-          onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
-          child: const Text('Đóng', style: TextStyle(color: Colors.white38, fontSize: 14)),
+        Focus(
+          autofocus: _audioTracks.isEmpty,
+          child: Builder(
+            builder: (context) {
+              final hasFocus = Focus.of(context).hasFocus;
+              return ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: hasFocus ? Colors.white : Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.white12),
+                  ),
+                ),
+                onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
+                child: Text(
+                  'Đóng',
+                  style: TextStyle(
+                    color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }
+          ),
         ),
       ],
     ));
@@ -406,39 +511,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
         builder: (dialogCtx, dialogSetState) {
           Widget subSizeButton(String label, double size) {
             final active = _subSize == size;
-            return Material(
-              color: active ? const Color(0xFF3B82F6) : const Color(0xFF1C1C30),
-              borderRadius: BorderRadius.circular(8),
-              child: InkWell(
-                onTap: () async {
-                  dialogSetState(() {
-                    _subSize = size;
-                  });
-                  setState(() {
-                    _subSize = size;
-                  });
-                  if (_player.platform is NativePlayer) {
-                    try {
-                      final nativePlayer = _player.platform as NativePlayer;
-                      nativePlayer.setProperty('sub-font-size', size.round().toString());
-                    } catch (_) {}
-                  }
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setDouble('sub_size', size);
-                },
-                focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: active ? Colors.white : Colors.white70,
+            return Focus(
+              autofocus: active,
+              child: Builder(
+                builder: (context) {
+                  final hasFocus = Focus.of(context).hasFocus;
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: hasFocus
+                          ? Colors.white
+                          : (active ? const Color(0xFF3B82F6) : const Color(0xFF1C1C30)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                        width: 2,
+                      ),
                     ),
-                  ),
-                ),
+                    child: InkWell(
+                      onTap: () async {
+                        dialogSetState(() {
+                          _subSize = size;
+                        });
+                        setState(() {
+                          _subSize = size;
+                        });
+                        _applySubtitleSize(size);
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setDouble('sub_size', size);
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: hasFocus
+                                ? Colors.black
+                                : (active ? Colors.white : Colors.white70),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
               ),
             );
           }
@@ -477,21 +594,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // Tắt sub
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
-                      child: Material(
-                        color: const Color(0xFF1C1C30),
-                        borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          onTap: () { _player.setSubtitleTrack(SubtitleTrack.no()); Navigator.pop(ctx); _startHideTimer(); },
-                          focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(10),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            child: Row(children: [
-                              Icon(Icons.subtitles_off, color: Colors.white54, size: 20),
-                              SizedBox(width: 12),
-                              Text('Tắt phụ đề', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                            ]),
-                          ),
+                      child: Focus(
+                        child: Builder(
+                          builder: (context) {
+                            final hasFocus = Focus.of(context).hasFocus;
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                              child: InkWell(
+                                onTap: () {
+                                  _player.setSubtitleTrack(SubtitleTrack.no());
+                                  Navigator.pop(ctx);
+                                  _startHideTimer();
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  child: Row(children: [
+                                    Icon(Icons.subtitles_off, color: hasFocus ? Colors.black : Colors.white54, size: 20),
+                                    const SizedBox(width: 12),
+                                    Text('Tắt phụ đề', style: TextStyle(color: hasFocus ? Colors.black : Colors.white70, fontSize: 14)),
+                                  ]),
+                                ),
+                              ),
+                            );
+                          }
                         ),
                       ),
                     ),
@@ -500,26 +633,59 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       final label = t.title ?? t.language ?? 'Sub ${e.key + 1}';
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Material(
-                          color: const Color(0xFF1C1C30),
-                          borderRadius: BorderRadius.circular(10),
-                          child: InkWell(
-                            onTap: () { _player.setSubtitleTrack(t); Navigator.pop(ctx); _startHideTimer(); },
-                            focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              child: Row(children: [
-                                const Icon(Icons.subtitles, color: Color(0xFF3B82F6), size: 20),
-                                const SizedBox(width: 12),
-                                Expanded(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14))),
-                                if (t.language != null) Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                                  child: Text(t.language!, style: const TextStyle(fontSize: 11, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600)),
+                        child: Focus(
+                          child: Builder(
+                            builder: (context) {
+                              final hasFocus = Focus.of(context).hasFocus;
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                    width: 2,
+                                  ),
                                 ),
-                              ]),
-                            ),
+                                child: InkWell(
+                                  onTap: () {
+                                    _player.setSubtitleTrack(t);
+                                    Navigator.pop(ctx);
+                                    _startHideTimer();
+                                  },
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    child: Row(children: [
+                                      Icon(Icons.subtitles, color: hasFocus ? Colors.black : const Color(0xFF3B82F6), size: 20),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          label,
+                                          style: TextStyle(color: hasFocus ? Colors.black : Colors.white, fontSize: 14),
+                                        ),
+                                      ),
+                                      if (t.language != null) Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: hasFocus 
+                                              ? const Color(0xFFE50914).withValues(alpha: 0.1) 
+                                              : const Color(0xFF3B82F6).withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          t.language!,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: hasFocus ? const Color(0xFFE50914) : const Color(0xFF3B82F6),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ]),
+                                  ),
+                                ),
+                              );
+                            }
                           ),
                         ),
                       );
@@ -531,9 +697,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
-                child: const Text('Đóng', style: TextStyle(color: Colors.white38, fontSize: 14)),
+              Focus(
+                child: Builder(
+                  builder: (context) {
+                    final hasFocus = Focus.of(context).hasFocus;
+                    return ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasFocus ? Colors.white : Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: hasFocus ? const Color(0xFF3B82F6) : Colors.white12),
+                        ),
+                      ),
+                      onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
+                      child: Text(
+                        'Đóng',
+                        style: TextStyle(
+                          color: hasFocus ? const Color(0xFF3B82F6) : Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    );
+                  }
+                ),
               ),
             ],
           );

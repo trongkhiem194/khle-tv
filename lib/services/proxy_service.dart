@@ -1,60 +1,60 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
-/// Máy chủ Proxy đa luồng cục bộ
-/// Giúp chia nhỏ file video từ Fshare thành từng chunk 3MB và tải song song tối đa 3 kết nối cùng lúc
+/// Máy chủ Proxy chạy trên Isolate riêng biệt để tránh đơ giao diện điều khiển (UI Thread)
+/// Tải song song tối ưu và hỗ trợ Backpressure tự động khi tạm dừng (Pause) video
 class FshareParallelProxy {
-  static HttpServer? _server;
+  static Isolate? _isolate;
+  static ReceivePort? _receivePort;
   static int? _port;
-  
-  // Sử dụng HttpClient gốc với autoUncompress = false để tránh các lỗi nén gzip video của Fshare
-  static final HttpClient _ioClient = HttpClient()
-    ..autoUncompress = false
-    ..connectionTimeout = const Duration(seconds: 15);
 
-  /// Khởi động máy chủ Proxy ngầm trên cổng ngẫu nhiên khả dụng (bind 0.0.0.0 cho Android)
+  /// Khởi động máy chủ Proxy trên Isolate riêng biệt
   static Future<int> start() async {
-    if (_server != null) return _port!;
+    if (_isolate != null) return _port!;
 
     try {
-      // Bind to 0.0.0.0 (anyIPv4) để tránh các lỗi định tuyến loopback cục bộ trên Android
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
-      _port = _server!.port;
+      _receivePort = ReceivePort();
+      
+      // Spawn isolate để chạy HTTP Server
+      _isolate = await Isolate.spawn(
+        _proxyIsolateMain,
+        _receivePort!.sendPort,
+        debugName: 'FshareProxyIsolate',
+      );
 
-      _server!.listen((HttpRequest request) {
-        if (request.uri.path == '/stream') {
-          _handleStream(request);
-        } else {
-          request.response.statusCode = HttpStatus.notFound;
-          request.response.close();
+      final completer = Completer<int>();
+      _receivePort!.listen((message) {
+        if (message is int) {
+          _port = message;
+          completer.complete(message);
         }
-      }, onError: (e) {
-        debugPrint('[Proxy] Server error: $e');
       });
 
-      debugPrint('[Proxy] Server started on port $_port (bound to anyIPv4)');
-      return _port!;
+      return completer.future;
     } catch (e) {
-      debugPrint('[Proxy] Failed to bind server: $e');
+      debugPrint('[Proxy] Failed to start proxy isolate: $e');
       return 0;
     }
   }
 
-  /// Tắt máy chủ proxy
+  /// Tắt máy chủ proxy và giải phóng Isolate
   static Future<void> stop() async {
     try {
-      await _server?.close(force: true);
-      _server = null;
+      _isolate?.kill(priority: Isolate.beforeNextEvent);
+      _isolate = null;
+      _receivePort?.close();
+      _receivePort = null;
       _port = null;
-      debugPrint('[Proxy] Server stopped.');
+      debugPrint('[Proxy] Isolate stopped.');
     } catch (e) {
-      debugPrint('[Proxy] Error stopping server: $e');
+      debugPrint('[Proxy] Error stopping isolate: $e');
     }
   }
 
-  /// Helper lấy địa chỉ IP LAN hiện tại của thiết bị (Wifi hoặc Ethernet) để TV kết nối không bị chặn loopback
+  /// Helper lấy địa chỉ IP LAN hiện tại của thiết bị (Wifi hoặc Ethernet)
   static Future<String> getLocalIp() async {
     try {
       final interfaces = await NetworkInterface.list(
@@ -72,17 +72,41 @@ class FshareParallelProxy {
         }
       }
     } catch (_) {}
-    return '127.0.0.1'; // Fallback nếu không có kết nối mạng
+    return '127.0.0.1'; // Fallback
   }
 
-  /// Chuyển đổi link Fshare gốc thành link proxy cục bộ sử dụng IP LAN
+  /// Chuyển đổi link Fshare gốc thành link proxy cục bộ
   static String getProxyUrl(String originalUrl, String ip) {
     if (_port == null) return originalUrl;
     final encodedUrl = Uri.encodeComponent(originalUrl);
     return 'http://$ip:$_port/stream?url=$encodedUrl';
   }
 
-  /// Xử lý stream truyền dữ liệu đa luồng
+  /// Entrypoint chính chạy trong Isolate riêng
+  static void _proxyIsolateMain(SendPort mainSendPort) async {
+    // Áp dụng HTTP Override chỉ trong Isolate này
+    HttpOverrides.global = IPv4HttpOverrides();
+
+    HttpServer? server;
+    try {
+      server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+      mainSendPort.send(server.port);
+
+      await for (final HttpRequest request in server) {
+        if (request.uri.path == '/stream') {
+          _handleStream(request);
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+        }
+      }
+    } catch (e) {
+      debugPrint('[ProxyIsolate] Error: $e');
+      mainSendPort.send(0);
+    }
+  }
+
+  /// Xử lý request stream từ trình phát phim
   static Future<void> _handleStream(HttpRequest request) async {
     final originalUrlStr = request.uri.queryParameters['url'];
     if (originalUrlStr == null || originalUrlStr.isEmpty) {
@@ -93,7 +117,7 @@ class FshareParallelProxy {
 
     final originalUrl = Uri.parse(originalUrlStr);
 
-    // Phân tích header Range được gửi từ trình phát phim
+    // Phân tích range header
     int startByte = 0;
     int? endByte;
     final rangeHeader = request.headers.value('range');
@@ -108,7 +132,6 @@ class FshareParallelProxy {
       }
     }
 
-    // Sao chép và chuyển tiếp toàn bộ header từ player sang Fshare (bao gồm Cookie, User-Agent)
     final Map<String, String> upstreamHeaders = {};
     request.headers.forEach((name, values) {
       if (name.toLowerCase() != 'host') {
@@ -116,25 +139,23 @@ class FshareParallelProxy {
       }
     });
 
-    // Đảm bảo luôn có User-Agent tiêu chuẩn để Fshare không chặn
     if (!upstreamHeaders.containsKey('user-agent') && !upstreamHeaders.containsKey('User-Agent')) {
       upstreamHeaders['User-Agent'] = 'Mozilla/5.0';
     }
 
-    debugPrint('[Proxy] Connection received. Range: $rangeHeader. Forwarding headers: $upstreamHeaders');
+    final client = HttpClient()
+      ..autoUncompress = false
+      ..connectionTimeout = const Duration(seconds: 15);
 
     try {
-      // 1. Gửi request nhỏ ban đầu để lấy Content-Length và Content-Type từ máy chủ Fshare
-      final initialReq = await _ioClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
-      upstreamHeaders.forEach((k, v) => initialReq.headers.set(k, v));
-      initialReq.headers.set('Range', 'bytes=$startByte-${startByte + 1}');
+      // Gửi probe request ban đầu để lấy thông tin content length
+      final probeReq = await client.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
+      upstreamHeaders.forEach((k, v) => probeReq.headers.set(k, v));
+      probeReq.headers.set('Range', 'bytes=$startByte-${startByte + 1}');
 
-      debugPrint('[Proxy] Sending initial probe to: $originalUrl');
-      final initialRes = await initialReq.close().timeout(const Duration(seconds: 10));
-      debugPrint('[Proxy] Probe response status: ${initialRes.statusCode}. Headers: ${initialRes.headers}');
-
-      final contentType = initialRes.headers.value(HttpHeaders.contentTypeHeader) ?? 'video/mp4';
-      final contentRange = initialRes.headers.value(HttpHeaders.contentRangeHeader);
+      final probeRes = await probeReq.close().timeout(const Duration(seconds: 10));
+      final contentType = probeRes.headers.value(HttpHeaders.contentTypeHeader) ?? 'video/mp4';
+      final contentRange = probeRes.headers.value(HttpHeaders.contentRangeHeader);
       int totalLength = 0;
 
       if (contentRange != null) {
@@ -145,27 +166,25 @@ class FshareParallelProxy {
       }
 
       if (totalLength == 0) {
-        totalLength = int.tryParse(initialRes.headers.value(HttpHeaders.contentLengthHeader) ?? '0') ?? 0;
+        totalLength = int.tryParse(probeRes.headers.value(HttpHeaders.contentLengthHeader) ?? '0') ?? 0;
       }
 
-      // Hủy stream kiểm tra ban đầu ngay lập tức
       try {
-        await initialRes.listen((_) {}).cancel();
+        await probeRes.listen((_) {}).cancel();
       } catch (_) {}
 
-      // Nếu không lấy được dung lượng file hoặc Fshare từ chối (403/400),
-      // tiến hành truyền phát trực tiếp (Direct Forward) qua HTTP Client thông thường
-      if (totalLength == 0 || initialRes.statusCode >= 400) {
-        debugPrint('[Proxy] Falling back to direct forwarding. Status: ${initialRes.statusCode}');
-        final fallReq = await _ioClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
-        upstreamHeaders.forEach((k, v) => fallReq.headers.set(k, v));
-        if (rangeHeader != null) fallReq.headers.set('Range', rangeHeader);
-        
-        final fallRes = await fallReq.close().timeout(const Duration(seconds: 10));
-        request.response.statusCode = fallRes.statusCode;
-        fallRes.headers.forEach((k, v) => request.response.headers.set(k, v.join(', ')));
-        
-        await request.response.addStream(fallRes);
+      // Nếu lỗi hoặc không lấy được độ dài, chuyển tiếp trực tiếp (direct fall back)
+      if (totalLength == 0 || probeRes.statusCode >= 400) {
+        debugPrint('[ProxyIsolate] Direct fallback. Status: ${probeRes.statusCode}');
+        final directReq = await client.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
+        upstreamHeaders.forEach((k, v) => directReq.headers.set(k, v));
+        if (rangeHeader != null) directReq.headers.set('Range', rangeHeader);
+
+        final directRes = await directReq.close().timeout(const Duration(seconds: 10));
+        request.response.statusCode = directRes.statusCode;
+        directRes.headers.forEach((k, v) => request.response.headers.set(k, v.join(', ')));
+
+        await request.response.addStream(directRes);
         await request.response.close();
         return;
       }
@@ -173,127 +192,91 @@ class FshareParallelProxy {
       endByte ??= totalLength - 1;
       final responseLength = endByte - startByte + 1;
 
-      // Thiết lập các header 206 Partial Content phản hồi cho player
       request.response.statusCode = HttpStatus.partialContent;
       request.response.headers.set(HttpHeaders.contentTypeHeader, contentType);
       request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
       request.response.headers.set(HttpHeaders.contentRangeHeader, 'bytes $startByte-$endByte/$totalLength');
       request.response.headers.set(HttpHeaders.contentLengthHeader, responseLength.toString());
 
-      // Cấu hình tải đa luồng song song
-      const int chunkSize = 3 * 1024 * 1024; // Mỗi chunk 3MB
-      const int maxParallel = 3; // 3 luồng tải song song đồng thời từ Fshare
-
-      int currentPos = startByte;
-      final Map<int, Future<List<int>?>> activeChunks = {};
-      final List<HttpClient> activeClients = [];
-      bool clientDisconnected = false;
-
-      // Lắng nghe sự kiện player ngắt kết nối
-      request.response.done.then((_) {
-        clientDisconnected = true;
-        final clients = List<HttpClient>.from(activeClients);
-        for (final c in clients) {
-          try {
-            c.close(force: true);
-          } catch (_) {}
-        }
-      }).catchError((_) {
-        clientDisconnected = true;
-        final clients = List<HttpClient>.from(activeClients);
-        for (final c in clients) {
-          try {
-            c.close(force: true);
-          } catch (_) {}
-        }
-      });
-
-      // Hàm tải độc lập một chunk dữ liệu sử dụng HttpClient thô (autoUncompress = false) và có timeout
-      Future<List<int>?> downloadChunk(int chunkStart) async {
-        if (clientDisconnected) return null;
-
-        final chunkEnd = (chunkStart + chunkSize - 1).clamp(0, endByte!);
-        if (chunkStart > chunkEnd) return null;
-
-        final chunkClient = HttpClient()
-          ..autoUncompress = false
-          ..connectionTimeout = const Duration(seconds: 8);
-        activeClients.add(chunkClient);
-
-        try {
-          final chunkReq = await chunkClient.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
-          upstreamHeaders.forEach((k, v) => chunkReq.headers.set(k, v));
-          chunkReq.headers.set('Range', 'bytes=$chunkStart-$chunkEnd');
-
-          final chunkRes = await chunkReq.close().timeout(const Duration(seconds: 10));
-          if (chunkRes.statusCode == 200 || chunkRes.statusCode == 206) {
-            final builder = BytesBuilder();
-            // Đọc stream dữ liệu với timeout tối đa 15 giây
-            await chunkRes.timeout(const Duration(seconds: 15)).forEach((data) {
-              if (!clientDisconnected) {
-                builder.add(data);
-              }
-            });
-            activeClients.remove(chunkClient);
-            chunkClient.close();
-            return builder.takeBytes();
-          }
-        } catch (e) {
-          debugPrint('[Proxy] downloadChunk error at $chunkStart: $e');
-        } finally {
-          activeClients.remove(chunkClient);
-          chunkClient.close();
-        }
-        return null;
-      }
-
-      // Khởi chạy đợt tải song song đầu tiên cho 3 chunk
-      for (int i = 0; i < maxParallel; i++) {
-        final pos = startByte + i * chunkSize;
-        if (pos <= endByte) {
-          activeChunks[pos] = downloadChunk(pos);
-        }
-      }
-
-      // Phục vụ dữ liệu tuần tự sang player qua Stream
-      while (currentPos <= endByte && !clientDisconnected) {
-        final currentChunkFuture = activeChunks[currentPos];
-        if (currentChunkFuture == null) break;
-
-        final data = await currentChunkFuture;
-        activeChunks.remove(currentPos);
-
-        if (clientDisconnected) break;
-
-        if (data == null || data.isEmpty) {
-          debugPrint('[Proxy] Chunk retry at $currentPos');
-          final retryData = await downloadChunk(currentPos);
-          if (clientDisconnected) break;
-          if (retryData == null || retryData.isEmpty) {
-            debugPrint('[Proxy] Terminating stream due to chunk failure.');
-            break;
-          }
-          request.response.add(retryData);
-        } else {
-          request.response.add(data);
-        }
-
-        // Tải trước chunk tiếp theo trong hàng đợi
-        final nextPreloadPos = currentPos + maxParallel * chunkSize;
-        if (nextPreloadPos <= endByte) {
-          activeChunks[nextPreloadPos] = downloadChunk(nextPreloadPos);
-        }
-
-        currentPos += chunkSize;
-      }
-
+      // Phục vụ dữ liệu bằng Stream hỗ trợ tự động Backpressure
+      final chunkStream = _getChunkStream(originalUrl, startByte, endByte, upstreamHeaders);
+      await request.response.addStream(chunkStream);
       await request.response.close();
-      debugPrint('[Proxy] Stream completed successfully for byte: $startByte');
     } catch (e) {
-      debugPrint('[Proxy] Stream handler error: $e');
+      debugPrint('[ProxyIsolate] Connection handler error: $e');
       try {
         await request.response.close();
       } catch (_) {}
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Generator Stream tải chunk 3MB với cơ chế tải trước tối đa 1 chunk và tự động tạm dừng theo backpressure
+  static Stream<List<int>> _getChunkStream(
+    Uri originalUrl,
+    int startByte,
+    int endByte,
+    Map<String, String> upstreamHeaders,
+  ) async* {
+    const int chunkSize = 3 * 1024 * 1024; // 3MB chunk
+    int currentPos = startByte;
+
+    Future<List<int>?>? nextChunkFuture;
+
+    // Helper tải một chunk
+    Future<List<int>?> downloadChunk(int chunkStart) async {
+      final chunkEnd = (chunkStart + chunkSize - 1).clamp(0, endByte);
+      if (chunkStart > chunkEnd) return null;
+
+      final client = HttpClient()
+        ..autoUncompress = false
+        ..connectionTimeout = const Duration(seconds: 8);
+
+      try {
+        final req = await client.openUrl('GET', originalUrl).timeout(const Duration(seconds: 10));
+        upstreamHeaders.forEach((k, v) => req.headers.set(k, v));
+        req.headers.set('Range', 'bytes=$chunkStart-$chunkEnd');
+
+        final res = await req.close().timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200 || res.statusCode == 206) {
+          final builder = BytesBuilder();
+          await res.timeout(const Duration(seconds: 12)).forEach((data) {
+            builder.add(data);
+          });
+          return builder.takeBytes();
+        }
+      } catch (e) {
+        debugPrint('[ProxyIsolate] Chunk download failed at $chunkStart: $e');
+      } finally {
+        client.close();
+      }
+      return null;
+    }
+
+    // Tải trước chunk đầu tiên
+    nextChunkFuture = downloadChunk(currentPos);
+
+    while (currentPos <= endByte) {
+      List<int>? data = await nextChunkFuture;
+
+      // Bắt đầu tải chunk tiếp theo song song ngay trước khi yield
+      final nextPos = currentPos + chunkSize;
+      if (nextPos <= endByte) {
+        nextChunkFuture = downloadChunk(nextPos);
+      }
+
+      if (data == null || data.isEmpty) {
+        debugPrint('[ProxyIsolate] Chunk retry at $currentPos');
+        data = await downloadChunk(currentPos);
+        if (data == null || data.isEmpty) {
+          debugPrint('[ProxyIsolate] Chunk failed twice. Terminating stream.');
+          break;
+        }
+      }
+
+      yield data;
+      currentPos += chunkSize;
     }
   }
 }
@@ -314,18 +297,15 @@ class IPv4HttpOverrides extends HttpOverrides {
           final addresses = await InternetAddress.lookup(resolvedHost, type: InternetAddressType.IPv4);
           if (addresses.isNotEmpty) {
             connectHost = addresses.first;
-            debugPrint('[IPv4Override] DNS lookup resolved $resolvedHost -> IPv4: ${addresses.first.address}');
           }
-        } catch (e) {
-          debugPrint('[IPv4Override] Failed to resolve IPv4 for $resolvedHost: $e');
-        }
+        } catch (_) {}
       }
 
       if (isHttps) {
         return await SecureSocket.startConnect(
           connectHost,
           targetPort,
-          onBadCertificate: (cert) => true, // Bỏ qua do kết nối thẳng qua IP đã phân giải thủ công
+          onBadCertificate: (cert) => true,
         );
       } else {
         return await Socket.startConnect(connectHost, targetPort);
@@ -334,4 +314,3 @@ class IPv4HttpOverrides extends HttpOverrides {
     return client;
   }
 }
-
