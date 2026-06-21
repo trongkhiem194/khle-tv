@@ -824,15 +824,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             } else {
               // Khi controls hiện → để D-pad tự do di chuyển giữa các InkWell, chỉ bắt media keys
               
-              // Nếu nút Play/Pause đang có focus, xử lý phím Lên để nhảy lên top bar và phím Xuống để ẩn controls
+              // Nếu nút Play/Pause đang có focus, xử lý phím Lên để nhảy lên top bar
               if (_playPauseFocusNode.hasFocus) {
                 if (key == LogicalKeyboardKey.arrowUp) {
                   _subtitleFocusNode.requestFocus();
-                  return KeyEventResult.handled;
-                }
-                if (key == LogicalKeyboardKey.arrowDown) {
-                  setState(() => _controlsVisible = false);
-                  _backgroundFocusNode.requestFocus();
                   return KeyEventResult.handled;
                 }
               }
