@@ -90,11 +90,14 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
             });
             _onTextChanged(val.recognizedWords);
           }
+          if (val.finalResult) {
+            _stopListening();
+          }
         },
         listenOptions: stt.SpeechListenOptions(
           localeId: 'vi_VN',
           listenFor: const Duration(seconds: 15),
-          pauseFor: const Duration(seconds: 4),
+          pauseFor: const Duration(seconds: 2),
         ),
       );
     } else {

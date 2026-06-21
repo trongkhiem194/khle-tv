@@ -42,6 +42,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   late final FocusNode _backgroundFocusNode;
   late final FocusNode _playPauseFocusNode;
+  late final FocusNode _backFocusNode;
+  late final FocusNode _audioFocusNode;
+  late final FocusNode _subtitleFocusNode;
+  late final FocusNode _seekLeftFocusNode;
+  late final FocusNode _seekRightFocusNode;
 
   Timer? _seekDebounceTimer;
   bool _isSeeking = false;
@@ -55,6 +60,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _backgroundFocusNode = FocusNode();
     _playPauseFocusNode = FocusNode();
+    _backFocusNode = FocusNode();
+    _audioFocusNode = FocusNode();
+    _subtitleFocusNode = FocusNode();
+    _seekLeftFocusNode = FocusNode();
+    _seekRightFocusNode = FocusNode();
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
@@ -159,58 +169,55 @@ class _PlayerScreenState extends State<PlayerScreen> {
               style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
             actions: [
-              Focus(
-                child: Builder(
-                  builder: (context) {
-                    final hasFocus = Focus.of(context).hasFocus;
-                    return ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: hasFocus ? Colors.white : Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.white12),
-                        ),
+              DPadFocusBuilder(
+                onTap: () => Navigator.pop(ctx, false),
+                builder: (context, hasFocus) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: hasFocus ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasFocus ? const Color(0xFFE50914) : Colors.white12,
+                        width: 2,
                       ),
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text(
-                        'Xem từ đầu',
-                        style: TextStyle(
-                          color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Text(
+                      'Xem từ đầu',
+                      style: TextStyle(
+                        color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                  }
-                ),
+                    ),
+                  );
+                },
               ),
-              Focus(
+              const SizedBox(width: 8),
+              DPadFocusBuilder(
                 autofocus: true,
-                child: Builder(
-                  builder: (context) {
-                    final hasFocus = Focus.of(context).hasFocus;
-                    return ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: hasFocus ? Colors.white : const Color(0xFFE50914),
-                        foregroundColor: hasFocus ? const Color(0xFFE50914) : Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(color: hasFocus ? Colors.white : Colors.transparent),
-                        ),
+                onTap: () => Navigator.pop(ctx, true),
+                builder: (context, hasFocus) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: hasFocus ? Colors.white : const Color(0xFFE50914),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                        width: 2,
                       ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(
-                        'Tiếp tục',
-                        style: TextStyle(
-                          color: hasFocus ? const Color(0xFFE50914) : Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    child: Text(
+                      'Tiếp tục',
+                      style: TextStyle(
+                        color: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
                       ),
-                    );
-                  }
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -246,7 +253,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // ═══ Tối ưu hóa nâng cao cho TV Box & Chromecast 4K ═══
         nativePlayer.setProperty('tls-verify', 'no'); // Bỏ qua xác thực TLS giúp tải luồng phim nhanh hơn
         nativePlayer.setProperty('audio-channels', 'stereo'); // Ép downmix về Stereo trong decoder để tiết kiệm CPU
-        nativePlayer.setProperty('sub-ass-override', 'yes'); // Loại bỏ định dạng phụ đề ASS phức tạp, chuyển về dạng chữ phẳng đơn giản
+        nativePlayer.setProperty('sub-ass-override', 'force'); // Loại bỏ định dạng phụ đề ASS phức tạp, chuyển về dạng chữ phẳng đơn giản
         
         // Cấu hình bắt buộc đệm trước để tránh hiện tượng giật cục khi mạng chập chờn
         nativePlayer.setProperty('cache-pause', 'yes');
@@ -306,6 +313,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _backgroundFocusNode.dispose();
     _playPauseFocusNode.dispose();
+    _backFocusNode.dispose();
+    _audioFocusNode.dispose();
+    _subtitleFocusNode.dispose();
+    _seekLeftFocusNode.dispose();
+    _seekRightFocusNode.dispose();
     _seekDebounceTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
@@ -396,7 +408,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  // ═══ Audio Track Dialog ═══
   void _showAudioDialog() {
     _hideTimer?.cancel();
     showDialog(context: context, builder: (ctx) => AlertDialog(
@@ -417,92 +428,109 @@ class _PlayerScreenState extends State<PlayerScreen> {
               itemBuilder: (_, i) {
                 final t = _audioTracks[i];
                 final label = t.title ?? t.language ?? 'Track ${i + 1}';
+                final currentAudio = _player.state.track.audio;
+                final isActive = currentAudio.id == t.id;
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: Focus(
+                  child: DPadFocusBuilder(
                     autofocus: i == 0,
-                    child: Builder(
-                      builder: (context) {
-                        final hasFocus = Focus.of(context).hasFocus;
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                              width: 2,
+                    onTap: () { 
+                      _player.setAudioTrack(t); 
+                      Navigator.pop(ctx); 
+                      _startHideTimer(); 
+                    },
+                    builder: (context, hasFocus) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: hasFocus 
+                                ? const Color(0xFFE50914) 
+                                : (isActive ? const Color(0xFF2ECC71) : Colors.transparent),
+                            width: 2,
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(children: [
+                          Icon(
+                            Icons.audiotrack, 
+                            color: hasFocus 
+                                ? Colors.black 
+                                : (isActive ? const Color(0xFF2ECC71) : const Color(0xFFE50914)), 
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              label, 
+                              style: TextStyle(
+                                color: hasFocus ? Colors.black : Colors.white, 
+                                fontSize: 15,
+                                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                              ),
                             ),
                           ),
-                          child: InkWell(
-                            onTap: () { _player.setAudioTrack(t); Navigator.pop(ctx); _startHideTimer(); },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(children: [
-                                Icon(Icons.audiotrack, color: hasFocus ? Colors.black : const Color(0xFFE50914), size: 20),
-                                const SizedBox(width: 12),
-                                Expanded(child: Text(label, style: TextStyle(color: hasFocus ? Colors.black : Colors.white, fontSize: 15))),
-                                if (t.language != null) Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: hasFocus 
-                                        ? const Color(0xFFE50914).withValues(alpha: 0.1) 
-                                        : const Color(0xFFE50914).withValues(alpha: 0.2), 
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    t.language!,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: hasFocus ? const Color(0xFFE50914) : const Color(0xFFE50914),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ]),
+                          if (isActive)
+                            Icon(
+                              Icons.check_circle,
+                              color: hasFocus ? const Color(0xFFE50914) : const Color(0xFF2ECC71),
+                              size: 18,
+                            ),
+                          if (t.language != null && !isActive) Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE50914).withValues(alpha: 0.2), 
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              t.language!,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFE50914),
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        );
-                      }
-                    ),
+                        ]),
+                      );
+                    },
                   ),
                 );
               },
             ),
       ),
       actions: [
-        Focus(
+        DPadFocusBuilder(
           autofocus: _audioTracks.isEmpty,
-          child: Builder(
-            builder: (context) {
-              final hasFocus = Focus.of(context).hasFocus;
-              return ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: hasFocus ? Colors.white : Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: hasFocus ? const Color(0xFFE50914) : Colors.white12),
-                  ),
+          onTap: () { Navigator.pop(ctx); _startHideTimer(); },
+          builder: (context, hasFocus) {
+            return Container(
+              decoration: BoxDecoration(
+                color: hasFocus ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: hasFocus ? const Color(0xFFE50914) : Colors.white12,
+                  width: 2,
                 ),
-                onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
-                child: Text(
-                  'Đóng',
-                  style: TextStyle(
-                    color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Text(
+                'Đóng',
+                style: TextStyle(
+                  color: hasFocus ? const Color(0xFFE50914) : Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
                 ),
-              );
-            }
-          ),
+              ),
+            );
+          },
         ),
       ],
     ));
   }
 
-  // ═══ Subtitle Dialog ═══
   void _showSubDialog() {
     _hideTimer?.cancel();
     showDialog(
@@ -511,54 +539,49 @@ class _PlayerScreenState extends State<PlayerScreen> {
         builder: (dialogCtx, dialogSetState) {
           Widget subSizeButton(String label, double size) {
             final active = _subSize == size;
-            return Focus(
+            return DPadFocusBuilder(
               autofocus: active,
-              child: Builder(
-                builder: (context) {
-                  final hasFocus = Focus.of(context).hasFocus;
-                  return Container(
-                    decoration: BoxDecoration(
+              onTap: () async {
+                dialogSetState(() {
+                  _subSize = size;
+                });
+                setState(() {
+                  _subSize = size;
+                });
+                _applySubtitleSize(size);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setDouble('sub_size', size);
+              },
+              builder: (context, hasFocus) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: hasFocus
+                        ? Colors.white
+                        : (active ? const Color(0xFF3B82F6) : const Color(0xFF1C1C30)),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
                       color: hasFocus
-                          ? Colors.white
-                          : (active ? const Color(0xFF3B82F6) : const Color(0xFF1C1C30)),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                        width: 2,
-                      ),
+                          ? Colors.black
+                          : (active ? Colors.white : Colors.white70),
                     ),
-                    child: InkWell(
-                      onTap: () async {
-                        dialogSetState(() {
-                          _subSize = size;
-                        });
-                        setState(() {
-                          _subSize = size;
-                        });
-                        _applySubtitleSize(size);
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setDouble('sub_size', size);
-                      },
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: hasFocus
-                                ? Colors.black
-                                : (active ? Colors.white : Colors.white70),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-              ),
+                  ),
+                );
+              },
             );
           }
+
+          final currentSub = _player.state.track.subtitle;
+          final isOffActive = currentSub.id == 'no' || currentSub == SubtitleTrack.no();
 
           return AlertDialog(
             backgroundColor: const Color(0xFF15151F),
@@ -594,99 +617,124 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     // Tắt sub
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
-                      child: Focus(
-                        child: Builder(
-                          builder: (context) {
-                            final hasFocus = Focus.of(context).hasFocus;
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                                  width: 2,
+                      child: DPadFocusBuilder(
+                        onTap: () {
+                          _player.setSubtitleTrack(SubtitleTrack.no());
+                          Navigator.pop(ctx);
+                          _startHideTimer();
+                        },
+                        builder: (context, hasFocus) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: hasFocus 
+                                    ? const Color(0xFFE50914) 
+                                    : (isOffActive ? const Color(0xFF3B82F6) : Colors.transparent),
+                                width: 2,
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(children: [
+                              Icon(
+                                Icons.subtitles_off, 
+                                color: hasFocus 
+                                    ? Colors.black 
+                                    : (isOffActive ? const Color(0xFF3B82F6) : Colors.white54), 
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Tắt phụ đề', 
+                                  style: TextStyle(
+                                    color: hasFocus ? Colors.black : Colors.white70, 
+                                    fontSize: 14,
+                                    fontWeight: isOffActive ? FontWeight.bold : FontWeight.normal,
+                                  ),
                                 ),
                               ),
-                              child: InkWell(
-                                onTap: () {
-                                  _player.setSubtitleTrack(SubtitleTrack.no());
-                                  Navigator.pop(ctx);
-                                  _startHideTimer();
-                                },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  child: Row(children: [
-                                    Icon(Icons.subtitles_off, color: hasFocus ? Colors.black : Colors.white54, size: 20),
-                                    const SizedBox(width: 12),
-                                    Text('Tắt phụ đề', style: TextStyle(color: hasFocus ? Colors.black : Colors.white70, fontSize: 14)),
-                                  ]),
+                              if (isOffActive)
+                                Icon(
+                                  Icons.check_circle,
+                                  color: hasFocus ? const Color(0xFFE50914) : const Color(0xFF3B82F6),
+                                  size: 18,
                                 ),
-                              ),
-                            );
-                          }
-                        ),
+                            ]),
+                          );
+                        },
                       ),
                     ),
                     ..._subtitleTracks.asMap().entries.map((e) {
                       final t = e.value;
                       final label = t.title ?? t.language ?? 'Sub ${e.key + 1}';
+                      final isActive = currentSub.id == t.id;
+
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Focus(
-                          child: Builder(
-                            builder: (context) {
-                              final hasFocus = Focus.of(context).hasFocus;
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
-                                    width: 2,
+                        child: DPadFocusBuilder(
+                          onTap: () {
+                            _player.setSubtitleTrack(t);
+                            Navigator.pop(ctx);
+                            _startHideTimer();
+                          },
+                          builder: (context, hasFocus) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                color: hasFocus ? Colors.white : const Color(0xFF1C1C30),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: hasFocus 
+                                      ? const Color(0xFFE50914) 
+                                      : (isActive ? const Color(0xFF3B82F6) : Colors.transparent),
+                                  width: 2,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Row(children: [
+                                Icon(
+                                  Icons.subtitles, 
+                                  color: hasFocus 
+                                      ? Colors.black 
+                                      : (isActive ? const Color(0xFF3B82F6) : Colors.white54), 
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    label, 
+                                    style: TextStyle(
+                                      color: hasFocus ? Colors.black : Colors.white, 
+                                      fontSize: 14,
+                                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                    ),
                                   ),
                                 ),
-                                child: InkWell(
-                                  onTap: () {
-                                    _player.setSubtitleTrack(t);
-                                    Navigator.pop(ctx);
-                                    _startHideTimer();
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                    child: Row(children: [
-                                      Icon(Icons.subtitles, color: hasFocus ? Colors.black : const Color(0xFF3B82F6), size: 20),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          label,
-                                          style: TextStyle(color: hasFocus ? Colors.black : Colors.white, fontSize: 14),
-                                        ),
-                                      ),
-                                      if (t.language != null) Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: hasFocus 
-                                              ? const Color(0xFFE50914).withValues(alpha: 0.1) 
-                                              : const Color(0xFF3B82F6).withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          t.language!,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: hasFocus ? const Color(0xFFE50914) : const Color(0xFF3B82F6),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ]),
+                                if (isActive)
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: hasFocus ? const Color(0xFFE50914) : const Color(0xFF3B82F6),
+                                    size: 18,
+                                  ),
+                                if (t.language != null && !isActive) Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF3B82F6).withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    t.language!,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF3B82F6),
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
-                              );
-                            }
-                          ),
+                              ]),
+                            );
+                          },
                         ),
                       );
                     }),
@@ -697,31 +745,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ),
             actions: [
-              Focus(
-                child: Builder(
-                  builder: (context) {
-                    final hasFocus = Focus.of(context).hasFocus;
-                    return ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: hasFocus ? Colors.white : Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(color: hasFocus ? const Color(0xFF3B82F6) : Colors.white12),
-                        ),
+              DPadFocusBuilder(
+                onTap: () { Navigator.pop(ctx); _startHideTimer(); },
+                builder: (context, hasFocus) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: hasFocus ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasFocus ? const Color(0xFF3B82F6) : Colors.white12,
+                        width: 2,
                       ),
-                      onPressed: () { Navigator.pop(ctx); _startHideTimer(); },
-                      child: Text(
-                        'Đóng',
-                        style: TextStyle(
-                          color: hasFocus ? const Color(0xFF3B82F6) : Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Text(
+                      'Đóng',
+                      style: TextStyle(
+                        color: hasFocus ? const Color(0xFF3B82F6) : Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                  }
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           );
@@ -778,14 +824,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             } else {
               // Khi controls hiện → để D-pad tự do di chuyển giữa các InkWell, chỉ bắt media keys
               
-              // Nếu nút Play/Pause đang có focus, xử lý phím Trái/Phải để tua trực tiếp và phím Xuống để ẩn controls
+              // Nếu nút Play/Pause đang có focus, xử lý phím Lên để nhảy lên top bar và phím Xuống để ẩn controls
               if (_playPauseFocusNode.hasFocus) {
-                if (key == LogicalKeyboardKey.arrowLeft) {
-                  _seekRelative(-10);
-                  return KeyEventResult.handled;
-                }
-                if (key == LogicalKeyboardKey.arrowRight) {
-                  _seekRelative(10);
+                if (key == LogicalKeyboardKey.arrowUp) {
+                  _subtitleFocusNode.requestFocus();
                   return KeyEventResult.handled;
                 }
                 if (key == LogicalKeyboardKey.arrowDown) {
@@ -866,16 +908,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black87, Colors.transparent])),
                           child: SafeArea(bottom: false, child: Row(children: [
                             // Back
-                            Material(color: Colors.transparent, child: InkWell(
+                            DPadFocusBuilder(
+                              focusNode: _backFocusNode,
                               onTap: () => Navigator.pop(context),
-                              focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(24)),
-                                child: const Icon(Icons.arrow_back, color: Colors.white, size: 22),
-                              ),
-                            )),
+                              builder: (context, hasFocus) {
+                                return Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: hasFocus ? Colors.white : Colors.white12,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.arrow_back,
+                                    color: hasFocus ? Colors.black : Colors.white,
+                                    size: 22,
+                                  ),
+                                );
+                              },
+                            ),
                             const SizedBox(width: 16),
                             // Title
                             Expanded(child: Column(
@@ -887,40 +941,86 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             )),
                             const SizedBox(width: 8),
                             // ═══ AUDIO BUTTON ═══
-                            Material(color: Colors.transparent, child: InkWell(
+                            DPadFocusBuilder(
+                              focusNode: _audioFocusNode,
                               onTap: _showAudioDialog,
-                              focusColor: const Color(0xFFE50914).withValues(alpha: 0.4),
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(24)),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  const Icon(Icons.audiotrack, color: Colors.white, size: 20),
-                                  if (_audioTracks.length > 1) ...[
-                                    const SizedBox(width: 6),
-                                    Text('${_audioTracks.length}', style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700, decoration: TextDecoration.none)),
-                                  ],
-                                ]),
-                              ),
-                            )),
+                              builder: (context, hasFocus) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: hasFocus ? Colors.white : Colors.white12,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.audiotrack,
+                                        color: hasFocus ? Colors.black : Colors.white,
+                                        size: 20,
+                                      ),
+                                      if (_audioTracks.length > 1) ...[
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${_audioTracks.length}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: hasFocus ? Colors.black : Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                            decoration: TextDecoration.none,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                             const SizedBox(width: 8),
                             // ═══ SUBTITLE BUTTON ═══
-                            Material(color: Colors.transparent, child: InkWell(
+                            DPadFocusBuilder(
+                              focusNode: _subtitleFocusNode,
                               onTap: _showSubDialog,
-                              focusColor: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(24)),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  const Icon(Icons.subtitles, color: Colors.white, size: 20),
-                                  if (_subtitleTracks.isNotEmpty) ...[
-                                    const SizedBox(width: 6),
-                                    Text('${_subtitleTracks.length}', style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700, decoration: TextDecoration.none)),
-                                  ],
-                                ]),
-                              ),
-                            )),
+                              builder: (context, hasFocus) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: hasFocus ? Colors.white : Colors.white12,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.subtitles,
+                                        color: hasFocus ? Colors.black : Colors.white,
+                                        size: 20,
+                                      ),
+                                      if (_subtitleTracks.isNotEmpty) ...[
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${_subtitleTracks.length}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: hasFocus ? Colors.black : Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                            decoration: TextDecoration.none,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                           ])),
                         ),
 
@@ -928,31 +1028,80 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                         // ── CENTER: Play/Seek buttons ──
                         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Material(color: Colors.transparent, child: InkWell(
+                          DPadFocusBuilder(
+                            focusNode: _seekLeftFocusNode,
                             onTap: () => _seekRelative(-10),
-                            canRequestFocus: false,
-                            focusColor: Colors.white24, borderRadius: BorderRadius.circular(32),
-                            child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(32)),
-                              child: const Icon(Icons.replay_10, color: Colors.white, size: 40)),
-                          )),
+                            builder: (context, hasFocus) {
+                              return Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: hasFocus ? Colors.white : Colors.black54,
+                                  borderRadius: BorderRadius.circular(32),
+                                  border: Border.all(
+                                    color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.replay_10,
+                                  color: hasFocus ? Colors.black : Colors.white,
+                                  size: 40,
+                                ),
+                              );
+                            },
+                          ),
                           const SizedBox(width: 36),
-                          Material(color: Colors.transparent, child: InkWell(
+                          DPadFocusBuilder(
                             focusNode: _playPauseFocusNode,
                             onTap: _togglePlayPause,
-                            focusColor: const Color(0xFFE50914).withValues(alpha: 0.5), borderRadius: BorderRadius.circular(44),
-                            child: Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(
-                              color: const Color(0xFFE50914), borderRadius: BorderRadius.circular(44),
-                              boxShadow: [BoxShadow(color: const Color(0xFFE50914).withValues(alpha: 0.5), blurRadius: 24)]),
-                              child: Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 52)),
-                          )),
+                            builder: (context, hasFocus) {
+                              return Container(
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: hasFocus ? Colors.white : const Color(0xFFE50914),
+                                  borderRadius: BorderRadius.circular(44),
+                                  border: Border.all(
+                                    color: const Color(0xFFE50914),
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFE50914).withValues(alpha: 0.5),
+                                      blurRadius: 24,
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _playing ? Icons.pause : Icons.play_arrow,
+                                  color: hasFocus ? const Color(0xFFE50914) : Colors.white,
+                                  size: 52,
+                                ),
+                              );
+                            },
+                          ),
                           const SizedBox(width: 36),
-                          Material(color: Colors.transparent, child: InkWell(
+                          DPadFocusBuilder(
+                            focusNode: _seekRightFocusNode,
                             onTap: () => _seekRelative(10),
-                            canRequestFocus: false,
-                            focusColor: Colors.white24, borderRadius: BorderRadius.circular(32),
-                            child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(32)),
-                              child: const Icon(Icons.forward_10, color: Colors.white, size: 40)),
-                          )),
+                            builder: (context, hasFocus) {
+                              return Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: hasFocus ? Colors.white : Colors.black54,
+                                  borderRadius: BorderRadius.circular(32),
+                                  border: Border.all(
+                                    color: hasFocus ? const Color(0xFFE50914) : Colors.transparent,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.forward_10,
+                                  color: hasFocus ? Colors.black : Colors.white,
+                                  size: 40,
+                                ),
+                              );
+                            },
+                          ),
                         ]),
 
                         const Spacer(),
@@ -1003,6 +1152,67 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class DPadFocusBuilder extends StatefulWidget {
+  final bool autofocus;
+  final FocusNode? focusNode;
+  final VoidCallback onTap;
+  final Widget Function(BuildContext context, bool hasFocus) builder;
+
+  const DPadFocusBuilder({
+    super.key,
+    required this.onTap,
+    required this.builder,
+    this.focusNode,
+    this.autofocus = false,
+  });
+
+  @override
+  State<DPadFocusBuilder> createState() => _DPadFocusBuilderState();
+}
+
+class _DPadFocusBuilderState extends State<DPadFocusBuilder> {
+  late final FocusNode _node;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _node = widget.focusNode ?? FocusNode();
+    _node.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _node.removeListener(_onFocusChange);
+    if (widget.focusNode == null) {
+      _node.dispose();
+    }
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _node.hasFocus;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      focusNode: _node,
+      autofocus: widget.autofocus,
+      onTap: widget.onTap,
+      focusColor: Colors.transparent,
+      hoverColor: Colors.transparent,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      child: widget.builder(context, _hasFocus),
     );
   }
 }
