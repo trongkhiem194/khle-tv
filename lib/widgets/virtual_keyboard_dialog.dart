@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
@@ -34,12 +35,23 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
   List<dynamic> _suggestions = [];
   bool _searchingSuggestions = false;
 
+  // D-pad Focus Nodes
+  final FocusNode _voiceFocusNode = FocusNode();
+  final FocusNode _spaceFocusNode = FocusNode();
+  final FocusNode _backspaceFocusNode = FocusNode();
+  final FocusNode _clearFocusNode = FocusNode();
+  final FocusNode _cancelFocusNode = FocusNode();
+  final FocusNode _searchFocusNode = FocusNode();
+  final List<FocusNode> _keyFocusNodes = List.generate(36, (_) => FocusNode());
+  List<FocusNode> _suggestionFocusNodes = [];
+
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialText);
     _speech = stt.SpeechToText();
     _initSpeech();
+    _initFocusNodes();
     if (widget.initialText.isNotEmpty) {
       _onTextChanged(widget.initialText);
     }
@@ -49,7 +61,246 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
   void dispose() {
     _ctrl.dispose();
     _debounce?.cancel();
+    _voiceFocusNode.dispose();
+    _spaceFocusNode.dispose();
+    _backspaceFocusNode.dispose();
+    _clearFocusNode.dispose();
+    _cancelFocusNode.dispose();
+    _searchFocusNode.dispose();
+    for (final node in _keyFocusNodes) {
+      node.dispose();
+    }
+    for (final node in _suggestionFocusNodes) {
+      node.dispose();
+    }
     super.dispose();
+  }
+
+  void _initFocusNodes() {
+    // 1. Voice Focus Node
+    _voiceFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowDown) {
+        if (_suggestionFocusNodes.isNotEmpty) {
+          _suggestionFocusNodes[0].requestFocus();
+          return KeyEventResult.handled;
+        } else {
+          _cancelFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _keyFocusNodes[0].requestFocus(); // Focus key 'A'
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+
+    // 2. Keyboard keys Focus Nodes (36 keys, 6x6 grid)
+    for (int i = 0; i < 36; i++) {
+      final idx = i;
+      _keyFocusNodes[idx].onKeyEvent = (node, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        final row = idx ~/ 6;
+        final col = idx % 6;
+
+        if (key == LogicalKeyboardKey.arrowUp) {
+          if (row > 0) {
+            _keyFocusNodes[idx - 6].requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            _voiceFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        if (key == LogicalKeyboardKey.arrowDown) {
+          if (row < 5) {
+            _keyFocusNodes[idx + 6].requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            // Row 5 -> move to action buttons below
+            if (col < 3) {
+              _spaceFocusNode.requestFocus();
+            } else if (col == 3 || col == 4) {
+              _backspaceFocusNode.requestFocus();
+            } else {
+              _clearFocusNode.requestFocus();
+            }
+            return KeyEventResult.handled;
+          }
+        }
+        if (key == LogicalKeyboardKey.arrowLeft) {
+          if (col > 0) {
+            _keyFocusNodes[idx - 1].requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            // Col 0 -> go to suggestions on the left
+            if (_suggestionFocusNodes.isNotEmpty) {
+              final targetIdx = row.clamp(0, _suggestionFocusNodes.length - 1);
+              _suggestionFocusNodes[targetIdx].requestFocus();
+              return KeyEventResult.handled;
+            } else {
+              _voiceFocusNode.requestFocus();
+              return KeyEventResult.handled;
+            }
+          }
+        }
+        if (key == LogicalKeyboardKey.arrowRight) {
+          if (col < 5) {
+            _keyFocusNodes[idx + 1].requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      };
+    }
+
+    // 3. Space Focus Node
+    _spaceFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _keyFocusNodes[30].requestFocus(); // Key '4'
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _cancelFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        if (_suggestionFocusNodes.isNotEmpty) {
+          _suggestionFocusNodes.last.requestFocus();
+        } else {
+          _voiceFocusNode.requestFocus();
+        }
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _backspaceFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+
+    // 4. Backspace Focus Node
+    _backspaceFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _keyFocusNodes[33].requestFocus(); // Key '7'
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _searchFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _spaceFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _clearFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+
+    // 5. Clear Focus Node
+    _clearFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _keyFocusNodes[35].requestFocus(); // Key '9'
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _searchFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _backspaceFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+
+    // 6. Cancel Focus Node
+    _cancelFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _spaceFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        if (_suggestionFocusNodes.isNotEmpty) {
+          _suggestionFocusNodes.last.requestFocus();
+        } else {
+          _voiceFocusNode.requestFocus();
+        }
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _searchFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+
+    // 7. Search Focus Node
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _clearFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _cancelFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+  }
+
+  void _updateSuggestions(List<dynamic> newList) {
+    for (final node in _suggestionFocusNodes) {
+      node.dispose();
+    }
+    _suggestionFocusNodes = List.generate(newList.length, (idx) {
+      final node = FocusNode();
+      node.onKeyEvent = (n, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+
+        if (key == LogicalKeyboardKey.arrowUp) {
+          if (idx > 0) {
+            _suggestionFocusNodes[idx - 1].requestFocus();
+          } else {
+            _voiceFocusNode.requestFocus();
+          }
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowDown) {
+          if (idx < _suggestionFocusNodes.length - 1) {
+            _suggestionFocusNodes[idx + 1].requestFocus();
+          } else {
+            _cancelFocusNode.requestFocus();
+          }
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowRight) {
+          final targetKeyIdx = (idx * 6).clamp(0, 35);
+          _keyFocusNodes[targetKeyIdx].requestFocus();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      };
+      return node;
+    });
+    _suggestions = newList;
   }
 
   Future<void> _initSpeech() async {
@@ -118,7 +369,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     _debounce?.cancel();
     if (text.trim().isEmpty) {
       setState(() {
-        _suggestions = [];
+        _updateSuggestions([]);
         _searchingSuggestions = false;
       });
       return;
@@ -146,7 +397,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
 
         if (mounted && _ctrl.text.trim() == query) {
           setState(() {
-            _suggestions = suggestionsList;
+            _updateSuggestions(suggestionsList);
             _searchingSuggestions = false;
           });
         }
@@ -224,7 +475,6 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
                   ),
-                  const SizedBox(height: 16),
                   const Text('Gợi ý phim:', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Expanded(
@@ -239,7 +489,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                             )
                           : Column(
                               mainAxisSize: MainAxisSize.min,
-                              children: _suggestions.map<Widget>((s) => _suggestionItem(s)).toList(),
+                              children: _suggestions.asMap().entries.map<Widget>((e) => _suggestionItem(e.value, _suggestionFocusNodes[e.key])).toList(),
                             )),
                   ),
                 ],
@@ -266,6 +516,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                     itemBuilder: (ctx, idx) {
                       final keyStr = _keys[idx];
                       return DPadFocusBuilder(
+                        focusNode: _keyFocusNodes[idx],
                         autofocus: idx == 0,
                         onTap: () => _append(keyStr),
                         builder: (context, hasFocus) {
@@ -297,17 +548,17 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                     children: [
                       Expanded(
                         flex: 2,
-                        child: _actionButton('Dấu cách', Icons.space_bar, () => _append(' ')),
+                        child: _actionButton('Dấu cách', Icons.space_bar, _spaceFocusNode, () => _append(' ')),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         flex: 1,
-                        child: _actionButton('Xóa', Icons.backspace, _backspace),
+                        child: _actionButton('Xóa', Icons.backspace, _backspaceFocusNode, _backspace),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         flex: 1,
-                        child: _actionButton('Xóa hết', Icons.clear_all, _clear),
+                        child: _actionButton('Xóa hết', Icons.clear_all, _clearFocusNode, _clear),
                       ),
                     ],
                   ),
@@ -317,6 +568,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       DPadFocusBuilder(
+                        focusNode: _cancelFocusNode,
                         onTap: () => Navigator.pop(context),
                         builder: (context, hasFocus) {
                           return Container(
@@ -342,6 +594,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
                       ),
                       const SizedBox(width: 12),
                       DPadFocusBuilder(
+                        focusNode: _searchFocusNode,
                         onTap: () => Navigator.pop(context, _ctrl.text),
                         builder: (context, hasFocus) {
                           return Container(
@@ -378,6 +631,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
 
   Widget _voiceSearchButton() {
     return DPadFocusBuilder(
+      focusNode: _voiceFocusNode,
       onTap: _listening ? _stopListening : _startListening,
       builder: (context, hasFocus) {
         return Container(
@@ -420,8 +674,9 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     );
   }
 
-  Widget _actionButton(String label, IconData icon, VoidCallback onTap) {
+  Widget _actionButton(String label, IconData icon, FocusNode node, VoidCallback onTap) {
     return DPadFocusBuilder(
+      focusNode: node,
       onTap: onTap,
       builder: (context, hasFocus) {
         return Container(
@@ -454,13 +709,14 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
     );
   }
 
-  Widget _suggestionItem(Map<String, dynamic> movie) {
+  Widget _suggestionItem(Map<String, dynamic> movie, FocusNode node) {
     final title = movie['title'] ?? movie['name'] ?? 'Không có tên';
     final releaseDate = movie['release_date'] ?? movie['first_air_date'] ?? '';
     final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
     final posterPath = movie['poster_path']?.toString() ?? '';
 
     return DPadFocusBuilder(
+      focusNode: node,
       onTap: () {
         Navigator.pop(context, movie); // Trả về Map thông tin phim trực tiếp
       },
@@ -534,6 +790,7 @@ class _VirtualKeyboardDialogState extends State<VirtualKeyboardDialog> {
 
 class DPadFocusBuilder extends StatefulWidget {
   final bool autofocus;
+  final FocusNode? focusNode;
   final VoidCallback onTap;
   final Widget Function(BuildContext context, bool hasFocus) builder;
 
@@ -541,6 +798,7 @@ class DPadFocusBuilder extends StatefulWidget {
     super.key,
     required this.onTap,
     required this.builder,
+    this.focusNode,
     this.autofocus = false,
   });
 
@@ -555,14 +813,16 @@ class _DPadFocusBuilderState extends State<DPadFocusBuilder> {
   @override
   void initState() {
     super.initState();
-    _node = FocusNode();
+    _node = widget.focusNode ?? FocusNode();
     _node.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
     _node.removeListener(_onFocusChange);
-    _node.dispose();
+    if (widget.focusNode == null) {
+      _node.dispose();
+    }
     super.dispose();
   }
 
